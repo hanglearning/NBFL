@@ -294,9 +294,9 @@ def test_by_data_set(
     return outputs
 
 
-def get_pruned_amount_by_weights(model):
+def get_pruned_ratio_by_weights(model):
     if check_mask_object_from_model(model):
-        sys.exit("\033[91m" + "Warning - get_pruned_amount_by_weights() is called when the model has mask." + "\033[0m")
+        sys.exit("\033[91m" + "Warning - get_pruned_ratio_by_weights() is called when the model has mask." + "\033[0m")
     total_params_count = get_num_total_model_params(model)
     total_0_count = 0
     total_nan_count = 0
@@ -313,12 +313,12 @@ def get_pruned_amount_by_weights(model):
         sys.exit("nan bug")
     return total_0_count / total_params_count
 
-def get_pruned_amount(model):
+def get_pruned_ratio(model):
     if check_mask_object_from_model(model):
-        return get_pruned_amount_by_mask(model)
-    return get_pruned_amount_by_weights(model)
+        return get_pruned_ratio_by_mask(model)
+    return get_pruned_ratio_by_weights(model)
 
-def get_pruned_amount_by_mask(model):
+def get_pruned_ratio_by_mask(model):
     if not check_mask_object_from_model(model):
         sys.exit("\033[91m" + "Warning - mask object not found." + "\033[0m")
     total_params_count = get_num_total_model_params(model)
