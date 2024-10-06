@@ -19,7 +19,7 @@ def get_dataset_mnist_extr_noniid(n_devices, n_classes, nsamples, rate_unbalance
     return train_dataset, test_dataset, user_groups_train, user_groups_test, user_groups_labels
 
 
-def mnist_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_samples, rate_unbalance, log_dirpath):
+def mnist_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_samples, rate_unbalance, log_dirpath): # BUG: test data labels not corresponding to the train! trainig sharding starting from line 73 may need to change
     num_shards_train, num_imgs_train = int(60000/num_samples), num_samples
     num_classes = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
@@ -33,14 +33,15 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
     dict_users_train = {i: np.array([]) for i in range(n_devices)}
     dict_users_test = {i: np.array([]) for i in range(n_devices)}
     dict_users_labels = {i: np.array([]) for i in range(n_devices)}
-    idxs = np.arange(num_shards_train*num_imgs_train)
+    
+    idxs = np.arange(num_shards_train*num_imgs_train) # sample indices from 0 to 59999
+    labels = np.array(train_dataset.targets) # labels of the corresponding 60000 training samples
+    
+    idxs_test = np.arange(num_imgs_test_total) # sample indices from 0 to 9999
+    labels_test = np.array(test_dataset.targets) # labels of the corresponding 10000 test samples
 
-    labels = np.array(train_dataset.targets)
-    idxs_test = np.arange(num_imgs_test_total)
-    labels_test = np.array(test_dataset.targets)
-
-    idxs_labels = np.vstack((idxs, labels))
-    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]
+    idxs_labels = np.vstack((idxs, labels)) # stack the indices and labels vertically, becomes a 2D array, first row is indices, second row is corresponding labels
+    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()] # sort by labels, ensures that all samples with the same label are grouped together.
     idxs = idxs_labels[0, :]
     labels = idxs_labels[1, :]
 
@@ -51,9 +52,9 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
 
     idxs_test_splits = [[] for i in range(num_classes)]
     for i in range(len(labels_test)):
-        idxs_test_splits[labels_test[i]].append(idxs_test[i])
+        idxs_test_splits[labels_test[i]].append(idxs_test[i]) # append the index of the test sample to the corresponding list of the label of the test sample -> key: label, value: list of indices of samples with that label
 
-    idx_shards = np.split(idx_shard, 10)
+    idx_shards = np.split(idx_shard, 10) # split the training sample shards into 10 groups
     for i in range(n_devices):
         user_labels = np.array([])
         temp_set = list(set(np.random.choice(10, n_classes, replace=False)))

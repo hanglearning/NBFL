@@ -1,17 +1,16 @@
 # TODO - prevent free or lazy rider - 
 
-''' wandb.log()
+''' logger
 1. log latest model accuracy in test_indi_accuracy()
 2. log validation mechanism performance in check_validation_performance()
 3. log forking event at the end of main.py
-4. log pouw book at the end of main.py
+4. log pos book at the end of main.py
 5. log when a malicious block has been added by any device in the network 
 '''
 import os
 import torch
 import argparse
 import pickle
-import wandb
 import random
 import warnings
 warnings.filterwarnings("ignore")
@@ -32,8 +31,7 @@ from model.mnist.mlp import MLP as MNIST_MLP
 
 ''' abbreviations:
     tx: transaction
-    uw: useful work
-    pouw: proof of useful work
+    pos: proof of stake
 '''
 
 models = {
@@ -111,7 +109,7 @@ parser.add_argument('--network_stability', type=float, default=1.0,
 parser.add_argument('--malicious_always_online', type=int, default=1, 
                     help='1 - malicious devices are always online; 0 - malicious devices can be online or offline depending on network_stability')
 parser.add_argument('--top_percent_winning', type=int, default=0.3, 
-                    help='when picking the winning block, considering the validators having the useful work within this top percent. see pick_winning_block()')
+                    help='when picking the winning block, considering the validators having the stake within this top percent. see pick_winning_block()')
 
 ####################### debug setting #######################
 parser.add_argument('--model_save_freq', type=int, default=0, help='0 - never save, 1 - save every round, n - save every n rounds')
@@ -147,14 +145,6 @@ def main():
         args.log_dir = f"{args.log_dir}/{log_root_name}"
     os.makedirs(args.log_dir)
     print(f"Model weights saved at {args.log_dir}.")
-
-    ######## setup wandb ########
-    wandb.login()
-    wandb.init(project=args.wandb_project, entity=args.wandb_username)
-    if not args.wandb_enable:
-        wandb.init(mode="disabled")
-    wandb.run.name = f"{log_root_name}_run_note_{args.run_note}"
-    wandb.config.update(args)
     
     ######## initiate devices ########
     init_global_model = create_model(cls=models[args.dataset]
@@ -193,13 +183,14 @@ def main():
     devices_list = list(idx_to_device.values())
     for device in devices_list:
         device.assign_peers(idx_to_device)
-    
-    malicious_block_record = []
-    malicious_winning_count = 0
+
+    logger = {} # used to log accuracy, stake, forking events, etc.
     
     ######## LBFL ########
 
     for comm_round in range(1, args.rounds + 1):
+
+        logger[comm_round] = {}
         
         print_text = f"Comm Round: {comm_round}"
         print()
@@ -214,8 +205,8 @@ def main():
         if len(init_online_devices) < 2:
             print(f"Total {len(init_online_devices)} device online, skip this round.")
             continue
-
-        wandb.log({"comm_round": comm_round, "n_online_devices": len(init_online_devices)})
+        
+        logger[comm_round]['n_online_devices'] = len(init_online_devices)
 
         ''' reset params '''
         for device in init_online_devices:
@@ -226,7 +217,7 @@ def main():
             device.layer_to_model_sig_row = {}
             device.layer_to_model_sig_col = {}
             device.max_model_acc = 0
-            device._worker_pruned_amount = 0
+            device._worker_pruned_ratio = 0
             # validators
             device._validator_tx = None
             device._verified_worker_txs = {}
@@ -235,7 +226,7 @@ def main():
             device.produced_block = None 
             device.worker_to_model_sig = {}           
             device.worker_to_acc = {}
-            device._device_to_ungranted_uw = defaultdict(float)
+            device._device_to_ungranted_reward = defaultdict(float)
             
         ''' Device Starts LBFL '''
 
@@ -247,15 +238,26 @@ def main():
             online_workers.append(device)
 
         ### worker starts learning and pruning ###
+        logger[comm_round]['global_test_acc'] = {}
+        logger[comm_round]['local_max_epoch'] = {}
+        logger[comm_round]['global_model_sparsity'] = {}
+        logger[comm_round]['local_max_acc'] = {}
+        logger[comm_round]['local_test_acc'] = {}
+
+        logger[comm_round]['after_prune_sparsity'] = {}
+        logger[comm_round]['after_prune_training_acc'] = {}
+        logger[comm_round]['after_prune_local_test_acc'] = {}
+        logger[comm_round]['after_prune_global_test_acc'] = {}
+
         for worker_iter in range(len(online_workers)):
             worker = online_workers[worker_iter]
             # resync chain - especially offline devices from last round
             if worker.resync_chain(comm_round, idx_to_device):
                 worker.post_resync(idx_to_device)
             # perform training
-            worker.model_learning_max(comm_round)
+            worker.model_learning_max(comm_round, logger)
             # perform pruning
-            worker.worker_prune(comm_round)
+            worker.worker_prune(comm_round, logger)
             # generate model signature
             worker.generate_model_sig()
             # make tx
@@ -273,22 +275,23 @@ def main():
             n_validators = int(args.n_validators)
         
         print(f"\nRound {comm_round}, {n_validators} validators selected.")
-        wandb.log({"comm_round": comm_round, "n_validators": n_validators})
+        logger[comm_round]['n_validators'] = n_validators
 
         online_validators = []
         random.shuffle(online_workers)
         
         for worker in online_workers:
-            if worker.is_online() and n_validators > 0:
-                worker.role = 'validator'
-                online_validators.append(worker)
-                n_validators -= 1
+            if worker.is_online():
+                # receive worker tx and verify signature
+                worker.receive_and_verify_worker_tx_sig(online_workers) # worker also receives other workers' tx due to verifying pruning reward
+                if n_validators > 0:
+                    worker.role = 'validator'
+                    online_validators.append(worker)
+                    n_validators -= 1
             
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]
-            # verify worker tx signature
-            validator.receive_and_verify_worker_tx_sig(online_workers)
-            # validate model based on euclidean distance and accuracy
+            # validate model based on accuracy
             validator.validate_models()
             # make validator transaction
             validator.make_validator_tx()
@@ -317,7 +320,7 @@ def main():
         for device in online_workers:
             # receive blocks from validators
             device.receive_blocks(online_validators)
-            # pick winning block based on PoUW
+            # pick winning block based on pos
             winning_block = device.pick_winning_block(idx_to_device)
             if not winning_block:
                 # no winning_block found, perform chain_resync next round
@@ -346,47 +349,23 @@ def main():
                 if len(blocks_produced_by) > 1:
                     forking = 1
                     break
-        wandb.log({"comm_round": comm_round, "forking_event": forking})
+        logger[comm_round]['forking_event'] = forking
 
-        ### Record if more than half of the devices have the same block ###
-        serious_forking = 1
-        block_producer_to_count = defaultdict(int)
-        for device in init_online_devices:
-            if device.has_appended_block:
-                block_producer = device.blockchain.get_last_block().produced_by
-                block_producer_to_count[block_producer] += 1
-                if block_producer_to_count[block_producer] >= int(len(init_online_devices) / 2):
-                    serious_forking = 0
-                    break
-        wandb.log({"comm_round": comm_round, "serious_forking": serious_forking})
-
-        ### record pouw book ###
+        ### record pos book ###
         for device in devices_list:
-            to_log = {}
-            to_log["comm_round"] = comm_round
-            to_log[f"{device.idx}_pouw_book"] = device._pouw_book
-        wandb.log(to_log)
+            logger[comm_round][f"{device.idx}_pos_book"] = device._pos_book
 
         ### record when a winning block from a malicious validator is accepted in network ###
-        malicious_block = 0
+        logger[comm_round]['malicious_winning_count'] = 0
         for device in init_online_devices:
             if device.has_appended_block:
                 block_produced_by = device.blockchain.get_last_block().produced_by
                 if idx_to_device[block_produced_by]._is_malicious:
-                   malicious_block = 1
-                   malicious_winning_count += 1
-                #    with open(f'{args.log_dir}/malicious_winning_record.txt', 'a') as f:
-                #     f.write(f'{comm_round}\n')
-                   break
-        malicious_block_record.append([comm_round, malicious_block])
-    
-    # print(f"{malicious_winning_count}/{comm_round} times malicious device won a block.")
-    # with open(f'{args.log_dir}/malicious_winning_record.txt', 'a') as f:
-    #     f.write(f'Total times: malicious_winning_count/{comm_round}\n')
-    malicious_block_record = wandb.Table(data=malicious_block_record, columns = ["comm_round", "malicious_block"])
-    wandb.log({log_root_name : wandb.plot.scatter(malicious_block_record, "comm_round", "malicious_block", title="Rounds that Malicious Devices' Blocks Accepted")})
+                   logger[comm_round]['malicious_winning_count'] += 1
 
-        
+        # save logger
+        with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
+            pickle.dump(logger, f)
 
 if __name__ == "__main__":
     main()
