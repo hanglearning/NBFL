@@ -3,7 +3,6 @@
 
 import torch
 import numpy as np
-import wandb
 from util import *
 from util import train as util_train
 from util import test_by_data_set
@@ -33,7 +32,6 @@ class Device():
         user_labels,
         global_test_loader,
         init_global_model,
-        init_global_model_path
     ):
         self.args = args
         
@@ -58,7 +56,6 @@ class Device():
         self.global_test_loader = global_test_loader
         self.init_global_model = copy_model(init_global_model, args.dev_device)
         self.model = copy_model(init_global_model, args.dev_device)
-        self.model_path = init_global_model_path
         self.max_model_acc = 0
         self._worker_pruned_ratio = 0
         # for validators
@@ -77,38 +74,14 @@ class Device():
         self.public_key = None
         self.generate_rsa_key()
     
-    ''' Generic Operations '''
-
-    def save_model_weights_to_log(self, comm_round, epoch, global_model=False):
-        L_or_M = "M" if self._is_malicious else "L"
-        model_save_path = f"{self.args.log_dir}/models_weights/{L_or_M}_{self._user_labels}_{self.idx}"
-        Path(model_save_path).mkdir(parents=True, exist_ok=True)
-        trainable_model_weights = get_trainable_model_weights(self.model)
-
-        # apply mask just in case
-        layer_to_mask = calc_mask_from_model_with_mask_object(self.model)
-        if not layer_to_mask:
-            layer_to_mask = calc_mask_from_model_without_mask_object(self.model)
-        for layer in trainable_model_weights:
-            trainable_model_weights[layer] *= np.array(torch.Tensor(layer_to_mask[layer]).cpu())
-
-        if global_model:
-            self.model_path = f"{model_save_path}/R{comm_round}.pkl"
-            with open(self.model_path, 'wb') as f:
-                pickle.dump(trainable_model_weights, f)
-        else:
-            self.last_local_model_path = f"{model_save_path}/R{comm_round}_E{epoch}.pkl"
-            with open(self.last_local_model_path, 'wb') as f:
-                pickle.dump(trainable_model_weights, f)
-    
     ''' Workers' Method '''        
 
     def model_learning_max(self, comm_round, logger):
 
         produce_mask_from_model_in_place(self.model)
 
-        logger[comm_round]['global_test_acc'][self.idx] = self.eval_model_by_global_test(self.model)
-        logger[comm_round]['global_model_sparsity'][self.idx] = 1 - get_pruned_ratio(self.model)
+        logger['global_test_acc'][comm_round][self.idx] = self.eval_model_by_global_test(self.model)
+        logger['global_model_sparsity'][comm_round][self.idx] = 1 - get_pruned_ratio(self.model)
 
         print()
         L_or_M = "M" if self._is_malicious else "L"
@@ -160,14 +133,13 @@ class Device():
 
 
             print(f"Worker {self.idx} with max training acc {max_acc} arrived at epoch {max_model_epoch}.")
-            logger[comm_round]['local_max_epoch'][self.idx] = max_model_epoch
+            logger['local_max_epoch'][comm_round][self.idx] = max_model_epoch
 
             self.model = max_model
             self.max_model_acc = max_acc
 
-        # self.save_model_weights_to_log(comm_round, max_model_epoch)
-        logger[comm_round]['local_max_acc'][self.idx] = self.max_model_acc
-        logger[comm_round]['local_test_acc'][self.idx] = self.eval_model_by_local_test(self.model)
+        logger['local_max_acc'][comm_round][self.idx] = self.max_model_acc
+        logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
     def worker_prune(self, comm_round, logger):
 
@@ -222,13 +194,10 @@ class Device():
         print(f"Pruned model before and after accuracy: {init_model_acc:.2f}, {after_pruning_acc:.2f}")
         print(f"Pruned amount: {after_pruned_ratio - init_pruned_ratio:.2f}")
 
-        logger[comm_round]['after_prune_sparsity'][self.idx] = 1 - after_pruned_ratio
-        logger[comm_round]['after_prune_training_acc'][self.idx] = after_pruning_acc
-        logger[comm_round]['after_prune_local_test_acc'][self.idx] = self.eval_model_by_local_test(self.model)
-        logger[comm_round]['after_prune_global_test_acc'][self.idx] = self.eval_model_by_global_test(self.model)
-
-        # save lateste pruned model
-        # self.save_model_weights_to_log(comm_round, self.args.epochs)
+        logger['after_prune_sparsity'][comm_round][self.idx] = 1 - after_pruned_ratio
+        logger['after_prune_acc'][comm_round][self.idx] = after_pruning_acc
+        logger['after_prune_local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
+        logger['after_prune_global_test_acc'][comm_round][self.idx] = self.eval_model_by_global_test(self.model)
 
     def poison_model(self, model):
         layer_to_mask = calc_mask_from_model_with_mask_object(model) # introduce noise to unpruned weights
@@ -632,9 +601,6 @@ class Device():
         
         received_validators_to_blocks = {block.produced_by: block for block in self._received_blocks.values()}
         # the same validator cannot win two times consecutively - mitigate monopoly
-        # if self.blockchain.get_chain_length() >= 2:
-        #     if self.blockchain.chain[-2].produced_by == self.blockchain.chain[-1].produced_by:
-        #         received_validators_to_blocks.pop(self.blockchain.chain[-1].produced_by, None)
         if self.blockchain.get_chain_length() >= 1:
             received_validators_to_blocks.pop(self.blockchain.chain[-1].produced_by, None)
         received_validators_pos_book = {block.produced_by: self._pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
@@ -767,17 +733,10 @@ class Device():
         self.has_appended_block = True
         # update global model
         self.model = deepcopy(self.verified_winning_block.global_model)
-        
-        # save global model weights and update path
-        # self.save_model_weights_to_log(comm_round, 0, global_model=True)
-        
+
         self.blockchain.chain.append(deepcopy(self.verified_winning_block))
 
         print(f"\n{self.role} {self.idx} has appended the winning block produced by {self.verified_winning_block.produced_by}.")
-
-        os.makedirs(f'{self.args.log_dir}/block_append_record/', exist_ok=True)
-        with open(f'{self.args.log_dir}/block_append_record/round_{comm_round}.txt', 'a') as f:
-            f.write(f'{self.idx} appends {self.verified_winning_block.produced_by}\n')
 
     ''' Helper Functions '''
 

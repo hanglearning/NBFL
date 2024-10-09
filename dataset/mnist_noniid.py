@@ -34,18 +34,18 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
     dict_users_test = {i: np.array([]) for i in range(n_devices)}
     dict_users_labels = {i: np.array([]) for i in range(n_devices)}
     
-    idxs = np.arange(num_shards_train*num_imgs_train) # sample indices from 0 to 59999
+    idxs = np.arange(num_shards_train*num_imgs_train) # make indices from 0 to 59999
     labels = np.array(train_dataset.targets) # labels of the corresponding 60000 training samples
     
-    idxs_test = np.arange(num_imgs_test_total) # sample indices from 0 to 9999
+    idxs_test = np.arange(num_imgs_test_total) # make indices from 0 to 9999
     labels_test = np.array(test_dataset.targets) # labels of the corresponding 10000 test samples
 
     idxs_labels = np.vstack((idxs, labels)) # stack the indices and labels vertically, becomes a 2D array, first row is indices, second row is corresponding labels
-    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()] # sort by labels, ensures that all samples with the same label are grouped together.
-    idxs = idxs_labels[0, :]
-    labels = idxs_labels[1, :]
+    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()] # sort by labels from 0 to 9, and ensures that all samples with the same label are grouped together.
+    idxs = idxs_labels[0, :] # extract indices
+    labels = idxs_labels[1, :] # extract labels
 
-    idxs_labels_test = np.vstack((idxs_test, labels_test))
+    idxs_labels_test = np.vstack((idxs_test, labels_test)) # do the same for test set
     idxs_labels_test = idxs_labels_test[:, idxs_labels_test[1, :].argsort()]
     idxs_test = idxs_labels_test[0, :]
     labels_test = idxs_labels_test[1, :]
@@ -57,11 +57,11 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
     idx_shards = np.split(idx_shard, 10) # split the training sample shards into 10 groups
     for i in range(n_devices):
         user_labels = np.array([])
-        temp_set = list(set(np.random.choice(10, n_classes, replace=False)))
-        dict_users_labels[i] = temp_set
+        temp_set = list(set(np.random.choice(10, n_classes, replace=False))) # randomly get n_classes number of labels without duplicates
+        dict_users_labels[i] = temp_set # record the labels assigned to the device
         rand_set = []
         for j in temp_set:
-            choice = np.random.choice(idx_shards[j], 1)[0]
+            choice = np.random.choice(idx_shards[j], 1)[0] # randomly pick a shard
             rand_set.append(int(choice))
             idx_shards[j] = np.delete(
                 idx_shards[j], np.where(idx_shards[j] == choice))

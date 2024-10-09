@@ -47,13 +47,6 @@ models = {
 
 parser = argparse.ArgumentParser(description='LBFL')
 
-####################### wandb setting #######################
-
-parser.add_argument('--wandb_enable', type=int, default=0, help= '0 to disable logging, 1 to enable wandb logging')
-parser.add_argument('--wandb_username', type=str, default=None)
-parser.add_argument('--wandb_project', type=str, default=None)
-parser.add_argument('--run_note', type=str, default=None)
-
 ####################### system setting #######################
 parser.add_argument('--train_verbose', type=bool, default=False)
 parser.add_argument('--test_verbose', type=bool, default=False)
@@ -144,19 +137,10 @@ def main():
         # local
         args.log_dir = f"{args.log_dir}/{log_root_name}"
     os.makedirs(args.log_dir)
-    print(f"Model weights saved at {args.log_dir}.")
     
     ######## initiate devices ########
     init_global_model = create_model(cls=models[args.dataset]
                          [args.arch], device=args.dev_device)
-    
-    # save init_global_model weights
-    model_save_path = f"{args.log_dir}/models_weights"
-    Path(model_save_path).mkdir(parents=True, exist_ok=True)
-    trainable_model_weights = get_trainable_model_weights(init_global_model)
-    init_global_model_path = f"{model_save_path}/R0.pkl"
-    with open(init_global_model_path, 'wb') as f:
-        pickle.dump(trainable_model_weights, f)
     
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_devices,
     dataset_name=args.dataset,
@@ -172,7 +156,7 @@ def main():
     n_malicious = args.n_malicious
     for i in range(args.n_devices):
         is_malicious = True if args.n_devices - i <= n_malicious else False
-        device = Device(i + 1, is_malicious, args, train_loaders[i], test_loaders[i], user_labels[i], global_test_loader, init_global_model, init_global_model_path)
+        device = Device(i + 1, is_malicious, args, train_loaders[i], test_loaders[i], user_labels[i], global_test_loader, init_global_model)
         if is_malicious:
             print(f"Assigned device {i + 1} malicious.")
             # label flipping attack
@@ -185,12 +169,29 @@ def main():
         device.assign_peers(idx_to_device)
 
     logger = {} # used to log accuracy, stake, forking events, etc.
-    
+
+    logger['global_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['local_max_epoch'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['global_model_sparsity'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['local_max_acc'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['local_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
+
+    logger['after_prune_sparsity'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['after_prune_acc'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['after_prune_local_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['after_prune_global_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
+
+    logger['n_online_devices'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['n_validators'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['forking_event'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['malicious_winning_count'] = {r: {} for r in range(1, args.rounds + 1)}
+
+    logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
+
+
     ######## LBFL ########
 
     for comm_round in range(1, args.rounds + 1):
-
-        logger[comm_round] = {}
         
         print_text = f"Comm Round: {comm_round}"
         print()
@@ -206,7 +207,7 @@ def main():
             print(f"Total {len(init_online_devices)} device online, skip this round.")
             continue
         
-        logger[comm_round]['n_online_devices'] = len(init_online_devices)
+        logger['n_online_devices'][comm_round] = len(init_online_devices)
 
         ''' reset params '''
         for device in init_online_devices:
@@ -238,16 +239,6 @@ def main():
             online_workers.append(device)
 
         ### worker starts learning and pruning ###
-        logger[comm_round]['global_test_acc'] = {}
-        logger[comm_round]['local_max_epoch'] = {}
-        logger[comm_round]['global_model_sparsity'] = {}
-        logger[comm_round]['local_max_acc'] = {}
-        logger[comm_round]['local_test_acc'] = {}
-
-        logger[comm_round]['after_prune_sparsity'] = {}
-        logger[comm_round]['after_prune_training_acc'] = {}
-        logger[comm_round]['after_prune_local_test_acc'] = {}
-        logger[comm_round]['after_prune_global_test_acc'] = {}
 
         for worker_iter in range(len(online_workers)):
             worker = online_workers[worker_iter]
@@ -275,7 +266,7 @@ def main():
             n_validators = int(args.n_validators)
         
         print(f"\nRound {comm_round}, {n_validators} validators selected.")
-        logger[comm_round]['n_validators'] = n_validators
+        logger['n_validators'][comm_round] = n_validators
 
         online_validators = []
         random.shuffle(online_workers)
@@ -349,19 +340,19 @@ def main():
                 if len(blocks_produced_by) > 1:
                     forking = 1
                     break
-        logger[comm_round]['forking_event'] = forking
+        logger['forking_event'][comm_round] = forking
 
         ### record pos book ###
         for device in devices_list:
-            logger[comm_round][f"{device.idx}_pos_book"] = device._pos_book
+            logger["pos_book"][comm_round][device.idx] = device._pos_book
 
         ### record when a winning block from a malicious validator is accepted in network ###
-        logger[comm_round]['malicious_winning_count'] = 0
+        logger['malicious_winning_count'][comm_round] = 0
         for device in init_online_devices:
             if device.has_appended_block:
                 block_produced_by = device.blockchain.get_last_block().produced_by
                 if idx_to_device[block_produced_by]._is_malicious:
-                   logger[comm_round]['malicious_winning_count'] += 1
+                   logger['malicious_winning_count'][comm_round] += 1
 
         # save logger
         with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
