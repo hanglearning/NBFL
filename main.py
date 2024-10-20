@@ -65,7 +65,7 @@ parser.add_argument('--rate_unbalance', type=float, default=1.0, help='unbalance
 parser.add_argument('--dataloader_workers', type=int, default=0, help='num of pytorch dataloader workers')
 parser.add_argument('--batch_size', type=int, default=10)
 parser.add_argument('--rounds', type=int, default=25)
-parser.add_argument('--epochs', type=int, default=500, help="local max training epochs to get the max accuracy")
+parser.add_argument('--epochs', type=int, default=50, help="local max training epochs to get the max accuracy")
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--optimizer', type=str, default="Adam", help="SGD|Adam")
 parser.add_argument('--n_samples', type=int, default=20)
@@ -127,7 +127,7 @@ def main():
     print(f"Using device {args.dev_device}")
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LBFL_seed_{args.seed}_{exe_date_time}_rounds_{args.rounds}_epochs_{args.epochs}_val_{args.n_validators}_mal_{args.n_malicious}_attack_{args.attack_type}_noise_{args.noise_variance}_rewind_{args.rewind}_nsamples_{args.n_samples}_nclasses_{args.n_classes}"
+    log_root_name = f"LBFL_seed_{args.seed}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.n_samples}_nclasses_{args.n_classes}_rounds_{args.rounds}_val_{args.n_validators}_mal_{args.n_malicious}_attack_{args.attack_type}_noise_{args.noise_variance}_rewind_{args.rewind}"
 
     try:
         # on Google Colab with Google Drive mounted
@@ -141,6 +141,10 @@ def main():
     ######## initiate devices ########
     init_global_model = create_model(cls=models[args.dataset]
                          [args.arch], device=args.dev_device)
+
+    # save init_global_model to be used by baseline methods and LotteryFL
+    torch.save(init_global_model.state_dict(), f"{args.log_dir}/init_global_model.pth")
+
     
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_devices,
     dataset_name=args.dataset,
@@ -187,7 +191,10 @@ def main():
     logger['malicious_winning_count'] = {r: {} for r in range(1, args.rounds + 1)}
 
     logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
-
+    
+    # save args
+    with open(f'{args.log_dir}/args.pickle', 'wb') as f:
+        pickle.dump(args, f)
 
     ######## LBFL ########
 

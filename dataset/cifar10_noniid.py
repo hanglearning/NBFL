@@ -27,9 +27,6 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
     assert(n_classes * n_devices <= num_shards_train)
     assert(n_classes <= num_classes)
 
-    idx_class = [i for i in range(num_classes)]
-    idx_shard = np.array([i for i in range(num_shards_train)])
-
     dict_users_train = {i: np.array([]) for i in range(n_devices)}
     dict_users_test = {i: np.array([]) for i in range(n_devices)}
     dict_users_labels = {i: np.array([]) for i in range(n_devices)}
@@ -49,49 +46,37 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
     idxs_test = idxs_labels_test[0, :]
     labels_test = idxs_labels_test[1, :]
 
+    idxs_train_splits = [[] for i in range(num_classes)]
+    for i in range(len(labels)):
+        idxs_train_splits[labels[i]].append(np.array(idxs[i])) # append the index of the train sample to the corresponding list of the label of the train sample -> key: label, value: list of indices of samples with that label
+
+
     idxs_test_splits = [[] for i in range(num_classes)]
     for i in range(len(labels_test)):
-        idxs_test_splits[labels_test[i]].append(idxs_test[i])
+        idxs_test_splits[labels_test[i]].append(np.array(idxs_test[i])) # append the index of the test sample to the corresponding list of the label of the test sample -> key: label, value: list of indices of samples with that label
 
-    idx_shards = np.split(idx_shard, 10)
-
-    # divide and assign
     for i in range(n_devices):
-        user_labels = np.array([])
-        temp_set = set(np.random.choice(10, n_classes, replace=False))
-        dict_users_labels[i] = temp_set
-        rand_set = []
-        for j in temp_set:
-            choice = np.random.choice(idx_shards[j], 1)[0]
-            rand_set.append(int(choice))
-            idx_shards[j] = np.delete(
-                idx_shards[j], np.where(idx_shards[j] == choice))
-        unbalance_flag = 0
+
+        # assign training samples
+        user_labels = list(set(np.random.choice(10, n_classes, replace=False)))
+        dict_users_labels[i] = user_labels
         label_to_qty = {}
-        for rand_iter in range(len(rand_set)):	
-            rand = rand_set[rand_iter]
-            if unbalance_flag == 0:
-                dict_users_train[i] = np.concatenate(
-                    (dict_users_train[i], idxs[rand*num_imgs_train:(rand+1)*num_imgs_train]), axis=0)
-                label_to_qty[temp_set[rand_iter]] = len(idxs[rand*num_imgs_train:(rand+1)*num_imgs_train])
-                user_labels = np.concatenate(
-                    (user_labels, labels[rand*num_imgs_train:(rand+1)*num_imgs_train]), axis=0)
-            else:
-                dict_users_train[i] = np.concatenate(
-                    (dict_users_train[i], idxs[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
-                label_to_qty[temp_set[rand_iter]] = len(idxs[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)])
-                user_labels = np.concatenate(
-                    (user_labels, labels[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
-            unbalance_flag = 1
+        for l_iter, l in enumerate(user_labels):
+            all_indices = idxs_train_splits[l] # get all indices of samples with label l
+            to_use_rate_unbalance = 1 if l_iter == 0 else rate_unbalance
+            sampled_indices = np.random.choice(len(all_indices), int(num_imgs_train * to_use_rate_unbalance), replace=False)
+            sampled_elements = np.array(all_indices)[sampled_indices]
+            idxs_train_splits[l] = np.delete(idxs_train_splits[l], sampled_indices)
+            dict_users_train[i] = np.concatenate(
+                    (dict_users_train[i], sampled_elements), axis=0)
+            label_to_qty[l] = len(sampled_elements)
 
         display_text = f"Device {i + 1}  - labels {list(label_to_qty.keys())}, corresponding qty {list(label_to_qty.values())}"
         with open(f'{log_dirpath}/dataset_assigned.txt', 'a') as f:
             f.write(f'{display_text}\n')
         print(display_text)
-        
-        user_labels_set = set(user_labels)
 
-        for label in user_labels_set:
+        for l in user_labels:
             dict_users_test[i] = np.concatenate(
-                (dict_users_test[i], idxs_test_splits[int(label)]), axis=0)
+                (dict_users_test[i], idxs_test_splits[int(l)]), axis=0)
     return dict_users_train, dict_users_test, dict_users_labels

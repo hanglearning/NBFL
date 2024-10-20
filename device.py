@@ -290,6 +290,9 @@ class Device():
 
         # add itself's accuracy
         self.worker_to_acc[self.idx] = self.max_model_acc
+        if self._is_malicious:
+            # malicious validator always assigns itself the maximum accuracy (1.0)
+            self.worker_to_acc[self.idx] = 1.0
 
         # sometimes may inverse the accuracy weights to account for minority workers
         if self.args.inverse_acc_weights and random.random() <= 0.5:
@@ -604,6 +607,9 @@ class Device():
         if self.blockchain.get_chain_length() >= 1:
             received_validators_to_blocks.pop(self.blockchain.chain[-1].produced_by, None)
         received_validators_pos_book = {block.produced_by: self._pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
+        if not received_validators_pos_book:
+            print(f"\n{self.idx} has no valid received block. Resync chain next round.")
+            return picked_block
         top_stake = max(received_validators_pos_book.values())
         candidates = [validator for validator, stake in received_validators_pos_book.items() if stake == top_stake]
         # get the winning validator
