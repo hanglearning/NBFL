@@ -171,6 +171,10 @@ def create_model_no_prune(cls, device='cuda:0') -> nn.Module:
 	model = cls().to(device)
 	return model
 
+def create_init_model(cls, device='cuda:0') -> nn.Module:
+	model = cls().to(device)
+	return model
+
 def create_model(cls, device='cuda:0') -> nn.Module:
 	"""
 		Returns new model pruned by 0.00 %. This is necessary to create buffer masks
@@ -217,46 +221,46 @@ def train(
 		optimizer = torch.optim.Adam(lr=lr, params=model.parameters(), weight_decay=1e-4)
 	elif optimizer_type == "SGD":
 		optimizer = torch.optim.SGD(lr=lr, params=model.parameters(), momentum=0.5)
-	loss_fn = nn.CrossEntropyLoss()
-	num_batch = len(train_dataloader)
-	global metrics
-
-	metrics = metrics.to(device)
 	model.train(True)
 	torch.set_grad_enabled(True)
 
-	losses = []
-	progress_bar = tqdm(enumerate(train_dataloader),
-						total=num_batch,
-						disable=not verbose,
-						)
+	# progress_bar = tqdm(enumerate(train_dataloader),
+	# 					total=num_batch,
+	# 					disable=not verbose,
+	# 					)
 
-	for batch_idx, batch in progress_bar:
-		x, y = batch
-		x = x.to(device)
-		y = y.to(device)
-		y_hat = model(x)
-		loss = F.cross_entropy(y_hat, y)
+	# for batch_idx, batch in progress_bar:
+	# 	x, y = batch
+	# 	x = x.to(device)
+	# 	y = y.to(device)
+	# 	y_hat = model(x)
+	# 	loss = F.cross_entropy(y_hat, y)
+	# 	model.zero_grad()
+
+	# 	loss.backward()
+	# 	optimizer.step()
+
+	# 	losses.append(loss.item())
+	# 	output = metrics(y_hat, y)
+
+	# 	progress_bar.set_postfix({'loss': loss.item(),
+	# 							  'acc': output['MulticlassAccuracy'].item()})
+
+	# Default criterion set to NLL loss function
+	criterion = nn.NLLLoss().to(device)
+	
+	for batch_idx, (images, labels) in enumerate(train_dataloader):
+		images, labels = images.to(device), labels.to(device)
+		# print(labels)
 		model.zero_grad()
-
+		log_probs = model(images)
+		loss = criterion(log_probs, labels)
 		loss.backward()
+		
 		optimizer.step()
 
-		losses.append(loss.item())
-		output = metrics(y_hat, y)
 
-		progress_bar.set_postfix({'loss': loss.item(),
-								  'acc': output['MulticlassAccuracy'].item()})
-
-
-	outputs = metrics.compute()
-	metrics.reset()
-	outputs = {k: [v.item()] for k, v in outputs.items()}
 	torch.set_grad_enabled(False)
-	outputs['Loss'] = [sum(losses) / len(losses)]
-	if verbose:
-		print(tabulate(outputs, headers='keys', tablefmt='github'))
-	return outputs
 
 
 @ torch.no_grad()

@@ -7,25 +7,25 @@ from sklearn.utils import shuffle
 from matplotlib import pyplot as plt
 from dataset.cifar10_noniid import get_dataset_cifar10_extr_noniid, cifar_extr_noniid
 from dataset.mnist_noniid import get_dataset_mnist_extr_noniid, mnist_extr_noniid
-# Given each user euqal number of samples if possible. If not, the last user
-# gets whatever is left after other users had their shares
 
 
-def DataLoaders(n_devices, dataset_name, n_classes, nsamples, log_dirpath, mode="non-iid", batch_size=32, rate_unbalance=1.0, dataloader_workers=1):
+def DataLoaders(n_devices, dataset_name, n_classes, n_samples, log_dirpath, seed, mode="non-iid", batch_size=32, rate_unbalance=1.0, dataloader_workers=1):
     if mode == "non-iid":
         if dataset_name == "mnist":
             return get_data_noniid_mnist(n_devices,
                                          n_classes,
-                                         nsamples,
+                                         n_samples,
                                          log_dirpath,
+                                         seed,
                                          batch_size,
                                          rate_unbalance,
                                          dataloader_workers)
         elif dataset_name == "cifar10":
             return get_data_noniid_cifar10(n_devices,
                                            n_classes,
-                                           nsamples,
+                                           n_samples,
                                            log_dirpath,
+                                           seed,
                                            batch_size,
                                            rate_unbalance,
                                            dataloader_workers)
@@ -54,17 +54,17 @@ def DataLoaders(n_devices, dataset_name, n_classes, nsamples, log_dirpath, mode=
             return iid_split(n_devices, train_dataset, batch_size, test_dataset, dataloader_workers)
 
 
-def iid_split(num_clients,
+def iid_split(n_clients,
               train_data,
               batch_size, test_data, dataloader_workers):
 
     all_train_idx = np.arange(train_data.data.shape[0])
 
-    sample_train_idx = np.array_split(all_train_idx, num_clients)
+    sample_train_idx = np.array_split(all_train_idx, n_clients)
 
     all_test_idx = np.arange(test_data.data.shape[0])
 
-    sample_test_idx = np.array_split(all_test_idx, num_clients)
+    sample_test_idx = np.array_split(all_test_idx, n_clients)
 
     user_train_loaders = []
     user_test_loaders = []
@@ -82,10 +82,10 @@ def iid_split(num_clients,
     return user_train_loaders, user_test_loaders
 
 
-def get_data_noniid_cifar10(n_devices, n_classes, nsamples, log_dirpath, batch_size=32, rate_unbalance=1.0, dataloader_workers=1):
+def get_data_noniid_cifar10(n_devices, n_classes, n_samples, log_dirpath, seed, batch_size=32, rate_unbalance=1.0, dataloader_workers=1):
 
     train_data, test_data, user_train, user_test, user_labels = get_dataset_cifar10_extr_noniid(
-        n_devices, n_classes, nsamples, rate_unbalance, log_dirpath)
+        n_devices, n_classes, n_samples, rate_unbalance, log_dirpath)
 
     train_loaders = []
     test_loaders = []
@@ -98,30 +98,30 @@ def get_data_noniid_cifar10(n_devices, n_classes, nsamples, log_dirpath, batch_s
         for j in range(user_test[i].size):
             user_test_temp.append(int(user_test[i][j]))
         sampler_train = torch.utils.data.BatchSampler(
-            torch.utils.data.SubsetRandomSampler(user_train_temp), batch_size, drop_last=False)
+            torch.utils.data.SubsetRandomSampler(user_train_temp, generator=torch.Generator().manual_seed(seed)), batch_size, drop_last=False)
         loader_train = torch.utils.data.DataLoader(
             train_data, batch_sampler=sampler_train, num_workers=dataloader_workers)
         train_loaders.append(loader_train)
 
         sampler_test = torch.utils.data.BatchSampler(
-            torch.utils.data.SubsetRandomSampler(user_test_temp), batch_size, drop_last=False)
+            torch.utils.data.SubsetRandomSampler(user_test_temp, generator=torch.Generator().manual_seed(seed)), batch_size, drop_last=False)
         loader_test = torch.utils.data.DataLoader(
             test_data, batch_sampler=sampler_test, num_workers=dataloader_workers)
         test_loaders.append(loader_test)
     
     # create global_test_loader (test ticket model before reapplying mask)
     global_test = torch.utils.data.BatchSampler(
-            torch.utils.data.SubsetRandomSampler(list(range(10000))), batch_size, drop_last=False)
+            torch.utils.data.SubsetRandomSampler(list(range(10000)), generator=torch.Generator().manual_seed(seed)), batch_size, drop_last=False)
     global_test_loader = torch.utils.data.DataLoader(
         test_data, batch_sampler=global_test, num_workers=dataloader_workers)
     
     return train_loaders, test_loaders, user_labels, global_test_loader
 
 
-def get_data_noniid_mnist(n_devices, n_classes, nsamples, log_dirpath, batch_size=32, rate_unbalance=1.0, dataloader_workers=1):
+def get_data_noniid_mnist(n_devices, n_classes, n_samples, log_dirpath, seed, batch_size=32, rate_unbalance=1.0, dataloader_workers=1):
 
     train_data, test_data, user_train, user_test, user_labels = get_dataset_mnist_extr_noniid(
-        n_devices, n_classes, nsamples, rate_unbalance, log_dirpath)
+        n_devices, n_classes, n_samples, rate_unbalance, log_dirpath)
 
     train_loaders = []
     test_loaders = []
@@ -134,20 +134,20 @@ def get_data_noniid_mnist(n_devices, n_classes, nsamples, log_dirpath, batch_siz
         for j in range(user_test[i].size):
             user_test_temp.append(int(user_test[i][j]))
         sampler_train = torch.utils.data.BatchSampler(
-            torch.utils.data.SubsetRandomSampler(user_train_temp), batch_size, drop_last=False)
+            torch.utils.data.SubsetRandomSampler(user_train_temp, generator=torch.Generator().manual_seed(seed)), batch_size, drop_last=False)
         loader_train = torch.utils.data.DataLoader(
             train_data, batch_sampler=sampler_train, num_workers=dataloader_workers)
         train_loaders.append(loader_train)
 
         sampler_test = torch.utils.data.BatchSampler(
-            torch.utils.data.SubsetRandomSampler(user_test_temp), batch_size, drop_last=False)
+            torch.utils.data.SubsetRandomSampler(user_test_temp, generator=torch.Generator().manual_seed(seed)), batch_size, drop_last=False)
         loader_test = torch.utils.data.DataLoader(
             test_data, batch_sampler=sampler_test)
         test_loaders.append(loader_test)
 
     # create global_test_loader (test ticket model before reapplying mask)
     global_test = torch.utils.data.BatchSampler(
-            torch.utils.data.SubsetRandomSampler(list(range(10000))), batch_size, drop_last=False)
+            torch.utils.data.SubsetRandomSampler(list(range(10000)), generator=torch.Generator().manual_seed(seed)), batch_size, drop_last=False)
     global_test_loader = torch.utils.data.DataLoader(
         test_data, batch_sampler=global_test, num_workers=dataloader_workers)
 

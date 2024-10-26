@@ -2,7 +2,7 @@ import numpy as np
 from torchvision import datasets, transforms
 
 
-def get_dataset_mnist_extr_noniid(n_devices, n_classes, nsamples, rate_unbalance, log_dirpath):
+def get_dataset_mnist_extr_noniid(n_devices, n_classes, n_samples, rate_unbalance, log_dirpath):
     data_dir = './data'
     apply_transform = transforms.Compose([
         transforms.ToTensor(),
@@ -15,7 +15,7 @@ def get_dataset_mnist_extr_noniid(n_devices, n_classes, nsamples, rate_unbalance
 
     # Chose euqal splits for every user
     user_groups_train, user_groups_test, user_groups_labels = mnist_extr_noniid(
-        train_dataset, test_dataset, n_devices, n_classes, nsamples, rate_unbalance, log_dirpath)
+        train_dataset, test_dataset, n_devices, n_classes, n_samples, rate_unbalance, log_dirpath)
     return train_dataset, test_dataset, user_groups_train, user_groups_test, user_groups_labels
 
 
