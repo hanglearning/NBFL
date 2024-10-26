@@ -115,6 +115,11 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def main(): 
 
@@ -129,6 +134,14 @@ def main():
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
     log_root_name = f"LBFL_seed_{args.seed}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.n_samples}_nclasses_{args.n_classes}_rounds_{args.rounds}_val_{args.n_validators}_mal_{args.n_malicious}_attack_{args.attack_type}_noise_{args.noise_variance}_rewind_{args.rewind}"
 
+    ######## initiate global model ########
+    init_global_model = create_init_model(cls=models[args.dataset]
+                         [args.arch], device=args.dev_device)
+    # save init_global_model to be used by baseline methods and LotteryFL
+    torch.save(init_global_model.state_dict(), f"{args.log_dir}/init_global_model_seed_{args.seed}.pth")
+    # pruned by 0.00 %. This is necessary to create buffer masks and to be consistent with create_model() in util.py
+    l1_prune(init_global_model, amount=0.00, name='weight', verbose=False)
+
     try:
         # on Google Colab with Google Drive mounted
         import google.colab
@@ -139,18 +152,13 @@ def main():
     os.makedirs(args.log_dir)
     
     ######## initiate devices ########
-    init_global_model = create_model(cls=models[args.dataset]
-                         [args.arch], device=args.dev_device)
-
-    # save init_global_model to be used by baseline methods and LotteryFL
-    torch.save(init_global_model.state_dict(), f"{args.log_dir}/init_global_model.pth")
-
     
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_devices,
     dataset_name=args.dataset,
     n_classes=args.n_classes,
-    nsamples=args.n_samples,
+    n_samples=args.n_samples,
     log_dirpath=args.log_dir,
+    seed=args.seed,
     mode=args.dataset_mode,
     batch_size=args.batch_size,
     rate_unbalance=args.rate_unbalance,

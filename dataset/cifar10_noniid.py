@@ -2,7 +2,7 @@ import numpy as np
 from torchvision import datasets, transforms
 
 
-def get_dataset_cifar10_extr_noniid(n_devices, n_classes, nsamples, rate_unbalance, log_dirpath):
+def get_dataset_cifar10_extr_noniid(n_devices, n_classes, n_samples, rate_unbalance, log_dirpath):
     data_dir = './data'
     apply_transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -15,17 +15,17 @@ def get_dataset_cifar10_extr_noniid(n_devices, n_classes, nsamples, rate_unbalan
 
     # Chose equal splits for every user
     user_groups_train, user_groups_test, user_groups_labels = cifar_extr_noniid(
-        train_dataset, test_dataset, n_devices, n_classes, nsamples, rate_unbalance, log_dirpath)
+        train_dataset, test_dataset, n_devices, n_classes, n_samples, rate_unbalance, log_dirpath)
     return train_dataset, test_dataset, user_groups_train, user_groups_test, user_groups_labels
 
 
 def cifar_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_samples, rate_unbalance, log_dirpath):
     num_shards_train, num_imgs_train = int(50000/num_samples), num_samples
-    num_classes = 10
+    n_classes = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
 
     assert(n_classes * n_devices <= num_shards_train)
-    assert(n_classes <= num_classes)
+    assert(n_classes <= n_classes)
 
     dict_users_train = {i: np.array([]) for i in range(n_devices)}
     dict_users_test = {i: np.array([]) for i in range(n_devices)}
@@ -46,12 +46,12 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
     idxs_test = idxs_labels_test[0, :]
     labels_test = idxs_labels_test[1, :]
 
-    idxs_train_splits = [[] for i in range(num_classes)]
+    idxs_train_splits = [[] for i in range(n_classes)]
     for i in range(len(labels)):
         idxs_train_splits[labels[i]].append(np.array(idxs[i])) # append the index of the train sample to the corresponding list of the label of the train sample -> key: label, value: list of indices of samples with that label
 
 
-    idxs_test_splits = [[] for i in range(num_classes)]
+    idxs_test_splits = [[] for i in range(n_classes)]
     for i in range(len(labels_test)):
         idxs_test_splits[labels_test[i]].append(np.array(idxs_test[i])) # append the index of the test sample to the corresponding list of the label of the test sample -> key: label, value: list of indices of samples with that label
 
