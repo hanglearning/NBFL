@@ -18,6 +18,9 @@ from typing import List, Tuple, Dict, Union
 from torch.nn import functional as F
 import gzip
 
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 from collections import defaultdict
 import torch
 
@@ -522,3 +525,29 @@ def what_samples(dataloader):
 		print(f"Label {label}: {count} samples")
 		total += count
 	print("Total count", total)
+
+def plot_pos_book(pos_book, log_dir, comm_round):
+	'''
+		Debug the rewarding function to see if it rewards more to the 
+		legitimates and less to the maliciouses
+	'''
+	os.makedirs(f'{log_dir}/pos_heat_maps/', exist_ok=True)
+	pos_book = pos_book[comm_round]
+	# Convert the dictionary to a 2D array
+	rows = sorted(pos_book.keys())
+	cols = sorted(pos_book[rows[0]].keys())
+	array = [[pos_book[row][col] for col in cols] for row in rows]
+
+	# Transpose the array to exchange rows and columns
+	transposed_array = list(map(list, zip(*array)))
+
+	# Generate the heat map
+	plt.figure(figsize=(16, 12))
+	sns.heatmap(transposed_array, annot=True, cmap='Reds', cbar=True, xticklabels=rows, yticklabels=cols)
+
+	# Add labels and title
+	plt.xlabel('Book Owner ID')
+	plt.ylabel('Device ID')
+	plt.title('POS Heat Map')
+
+	plt.savefig(f'{log_dir}/pos_heat_maps/pos_heat_map_round_{comm_round}.png')
