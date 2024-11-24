@@ -493,3 +493,20 @@ def copy_model(model: nn.Module, device='cuda:0'):
 	for name, buffer_ in new_model.named_buffers():
 		buffer_.data.copy_(source_buffer[name].data)
 	return new_model
+
+def calc_mask_from_model_with_mask_object(model):
+    layer_to_mask = {}
+    for layer, module in model.named_children():
+        for name, mask in module.named_buffers():
+            if 'mask' in name:
+                layer_to_mask[layer] = mask
+    return layer_to_mask
+
+def calc_mask_from_model_without_mask_object(model):
+	layer_to_mask = {}
+	for layer, module in model.named_children():
+		for name, weight_params in module.named_parameters():
+			if 'weight' in name:
+				layer_to_mask[layer] = np.ones_like(weight_params.cpu().detach().numpy())
+				layer_to_mask[layer][weight_params.cpu() == 0] = 0
+	return layer_to_mask

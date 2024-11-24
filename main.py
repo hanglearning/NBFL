@@ -105,7 +105,12 @@ parser.add_argument('--top_percent_winning', type=int, default=0.3,
                     help='when picking the winning block, considering the validators having the stake within this top percent. see pick_winning_block()')
 
 ####################### debug setting #######################
-parser.add_argument('--model_save_freq', type=int, default=0, help='0 - never save, 1 - save every round, n - save every n rounds')
+parser.add_argument('--show_all_validation_performance', type=int, default=1, help='0 - do not show, 1 - show the validation performance of EVERY validator against the malicious devices in produce_global_model_and_reward()')
+parser.add_argument('--show_validation_performance_in_block', type=int, default=1, help='0 - do not show, 1 - show the validation performance against the malicious devices in its block')
+
+####################### other settings #######################
+parser.add_argument('--save_init_global_model', type=int, default=0, help='0 - do not save, 1 - save')
+
 
 args = parser.parse_args()
 
@@ -137,8 +142,9 @@ def main():
     ######## initiate global model ########
     init_global_model = create_init_model(cls=models[args.dataset]
                          [args.arch], device=args.dev_device)
-    # save init_global_model to be used by baseline methods and LotteryFL
-    torch.save(init_global_model.state_dict(), f"{args.log_dir}/init_global_model_seed_{args.seed}.pth")
+    if args.save_init_global_model:
+        # save init_global_model to be used by baseline methods and LotteryFL
+        torch.save(init_global_model.state_dict(), f"{args.log_dir}/init_global_model_seed_{args.seed}.pth")
     # pruned by 0.00 %. This is necessary to create buffer masks and to be consistent with create_model() in util.py
     l1_prune(init_global_model, amount=0.00, name='weight', verbose=False)
 
@@ -193,10 +199,10 @@ def main():
     logger['after_prune_local_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
     logger['after_prune_global_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
 
-    logger['n_online_devices'] = {r: {} for r in range(1, args.rounds + 1)}
-    logger['n_validators'] = {r: {} for r in range(1, args.rounds + 1)}
-    logger['forking_event'] = {r: {} for r in range(1, args.rounds + 1)}
-    logger['malicious_winning_count'] = {r: {} for r in range(1, args.rounds + 1)}
+    logger['n_online_devices'] = {r: 0 for r in range(1, args.rounds + 1)}
+    logger['n_validators'] = {r: 0 for r in range(1, args.rounds + 1)}
+    logger['forking_event'] = {r: 0 for r in range(1, args.rounds + 1)}
+    logger['malicious_winning_count'] = {r: 0 for r in range(1, args.rounds + 1)}
 
     logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
     
@@ -243,6 +249,7 @@ def main():
             device.worker_to_model_sig = {}           
             device.worker_to_acc = {}
             device._device_to_ungranted_reward = defaultdict(float)
+            device.worker_to_acc_weight = {}
             
         ''' Device Starts LBFL '''
 
@@ -298,7 +305,7 @@ def main():
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]
             # validate model based on accuracy
-            validator.validate_models()
+            validator.validate_models(idx_to_device)
             # make validator transaction
             validator.make_validator_tx()
             # broadcast tx to all the validators
@@ -340,8 +347,9 @@ def main():
         for device in online_workers:
             # append and process block
             device.process_and_append_block(comm_round)
-            # check performance of the validation mechanism
-            device.check_validation_performance(idx_to_device, comm_round)
+            # DEBUG - check performance of the validation mechanism
+            if args.show_validation_performance_in_block:
+                device.check_validation_performance(idx_to_device, comm_round)
 
         ''' End of LBFL '''
 
@@ -372,6 +380,9 @@ def main():
         # save logger
         with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
             pickle.dump(logger, f)
+
+        # generate heatmap for the pos book
+        plot_pos_book(logger["pos_book"], args.log_dir, comm_round)
 
 if __name__ == "__main__":
     main()

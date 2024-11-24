@@ -12,11 +12,11 @@ for attack_type in [0, 1, 2, 3]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
         if attack_type == 0:
-            Standalone_log_paths = [f'{log_base_path}/CELL_baseline/logs/{folder}' for folder in os.listdir(f'{log_base_path}/CELL_baseline/logs') if os.path.isdir(f'{log_base_path}/CELL_baseline/logs/{folder}') and f"malicious_{mal}" in folder and "STANDALONE" in folder]
-            FedAvg_log_paths = [f'{log_base_path}/CELL_baseline/logs/{folder}' for folder in os.listdir(f'{log_base_path}/CELL_baseline/logs') if os.path.isdir(f'{log_base_path}/CELL_baseline/logs/{folder}') and f"malicious_{mal}" in folder and "FEDAVG" in folder]
+            Standalone_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and "STANDALONE" in folder]
+            FedAvg_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and "FEDAVG" in folder]
         LBFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder]
-        CELL_log_paths = [f'{log_base_path}/CELL_baseline/logs/{folder}' for folder in os.listdir(f'{log_base_path}/CELL_baseline/logs') if os.path.isdir(f'{log_base_path}/CELL_baseline/logs/{folder}') and f"malicious_{mal}" in folder and "CELL" in folder]
-        LotteryFL_log_paths = [f'{log_base_path}/lotteryFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/lotteryFL/logs') if os.path.isdir(f'{log_base_path}/lotteryFL/logs/{folder}') and f"nmalicious_{mal}" in folder]
+        CELL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and f"attack_{attack_type}" in folder and "CELL" in folder]
+        LotteryFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"nmalicious_{mal}" in folder and f"attack_{attack_type}" in folder]
         run_names = ['LBFL', 'Standalone', 'FedAvg', 'CELL', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'CELL', 'LotteryFL']
         colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
 

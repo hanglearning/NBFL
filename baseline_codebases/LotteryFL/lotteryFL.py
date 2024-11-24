@@ -137,22 +137,14 @@ if __name__ == '__main__':
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    def calc_mask_from_model_with_mask_object(model):
-        layer_to_mask = {}
-        for layer, module in model.named_children():
-            for name, mask in module.named_buffers():
-                if 'mask' in name:
-                    layer_to_mask[layer] = mask
-        return layer_to_mask
-
     def poison_model(model):
-        produce_mask_from_model_in_place(model)
-        layer_to_mask = calc_mask_from_model_with_mask_object(model) # introduce noise to unpruned weights
+        # produce_mask_from_model_in_place(model)
+        layer_to_mask = calc_mask_from_model_without_mask_object(model) # introduce noise to unpruned weights
         for layer, module in model.named_children():
             for name, weight_params in module.named_parameters():
                 if "weight" in name:
                     # noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * torch.from_numpy(layer_to_mask[layer]).to(self.args.dev_device)
-                    noise = 3 * torch.randn(weight_params.size()).to(device) * layer_to_mask[layer].to(device)
+                    noise = 3 * torch.randn(weight_params.size()) * layer_to_mask[layer]
                     weight_params.data.add_(noise.to(device))
         print(f"User {idx} poisoned the whole neural network with variance 3.") # or should say, unpruned weights?
         
@@ -197,12 +189,13 @@ if __name__ == '__main__':
         for idx in idxs_users:
             print(f"User {idx + 1} is training")
 
+            local_model = LocalUpdate(args=args, trainloader=train_loaders[idx],
+                                        validloader=test_loaders[idx], testloader=global_test_loader)
+            
             # Hang - for malicious user with label flipping attack
             if idx >= args.n_clients - args.n_malicious and args.attack_type == 2 and epoch == 0:
                 local_model.trainloader.dataset.targets = 9 - local_model.trainloader.dataset.targets  
-
-            local_model = LocalUpdate(args=args, trainloader=train_loaders[idx],
-                                        validloader=test_loaders[idx], testloader=global_test_loader)
+                
             #test global model before train
             train_model = copy.deepcopy(global_model)
 

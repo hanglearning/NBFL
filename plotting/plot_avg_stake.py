@@ -51,5 +51,7 @@ for attack_type in [0, 1, 2, 3]:
         plt.xlabel('Communication Round')
         plt.ylabel('Stake')
         plt.title(f'Stake Curves - {mal} Attackers - {attack_type_map[attack_type]}')
-
-        plt.show()
+        
+        plt.savefig(f'{log_base_path}/LBFL/logs/avg_stake_mal_{mal}_attack_{attack_type}.png', dpi=300)
+        plt.clf()
+        # plt.show()
