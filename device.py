@@ -109,7 +109,7 @@ class Device():
             self.poison_model(self.model)
             poinsoned_acc = self.eval_model_by_train(self.model)
             print(f'Poisoned accuracy: {poinsoned_acc}, decreased {max_acc - poinsoned_acc}.')
-            self.max_model_acc = poinsoned_acc  
+            self.max_model_acc = poinsoned_acc
         else:
             max_model = copy_model(self.model, self.args.dev_device)
             max_model_epoch = epoch = 0
@@ -125,7 +125,7 @@ class Device():
                             self.args.dev_device,
                             self.args.train_verbose)
                 acc = self.eval_model_by_train(self.model)
-                if acc > max_acc:
+                if acc >= max_acc:
                     max_model = copy_model(self.model, self.args.dev_device)
                     max_acc = acc
                     max_model_epoch = epoch + 1
@@ -207,7 +207,7 @@ class Device():
                 if "weight" in name:
                     # noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * torch.from_numpy(layer_to_mask[layer]).to(self.args.dev_device)
                     noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * layer_to_mask[layer].to(self.args.dev_device)
-                    weight_params = weight_params + noise.to(self.args.dev_device)
+                    weight_params.data.add_(noise.to(self.args.dev_device))  # Modify weights in place
         print(f"Device {self.idx} poisoned the whole neural network with variance {self.args.noise_variance}.") # or should say, unpruned weights?
 
     def generate_model_sig(self):
@@ -309,7 +309,7 @@ class Device():
                 i += 1
 
         # sometimes may inverse the accuracy weights to account for minority workers
-        if self.args.inverse_acc_weights and random.random() <= 0.5:
+        if self.args.inverse_acc_weights and random.random() <= 0.05:
             self.worker_to_acc = {worker_idx: 1 - acc for worker_idx, acc in self.worker_to_acc.items()}
             print(f"Validator {self.idx} has inversed its accuracy weights.")
 
@@ -327,22 +327,24 @@ class Device():
         return
 
     def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio):
-        # using harmonic mean with linear shift emphasize from accuracy to pruned_ratio
+        # # using harmonic mean with linear shift emphasize from accuracy to pruned_ratio
+        # using linear shift emphasize from accuracy to pruned_ratio
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         curr_chain_length = self.blockchain.get_chain_length()
 
-        denominator = (1 - self.args.target_sparsity) / (latest_block_global_model_pruned_ratio / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds
-        acc_weight = 1 - ( (curr_chain_length + 1) / denominator ) # (curr_chain_length + 1) is technically the current communication round, but sometimes no device appended a block in the previous round, so this is more precise
+        est_remaining_prune_rounds = (1 - self.args.target_sparsity - worker_pruned_ratio) / (latest_block_global_model_pruned_ratio / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds for the worker to prune
+        est_remaining_train_rounds = (1 - worker_acc) / (worker_acc / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds for the worker to train
+        est_remaining_rounds = max(est_remaining_prune_rounds, est_remaining_train_rounds)
+        acc_weight = 1 - ( (curr_chain_length + 1) / (curr_chain_length + 1 + est_remaining_rounds) ) # (curr_chain_length + 1) is technically the current communication round, but sometimes no device appended a block in the previous round, so this is more precise
         acc_weight = max(0, acc_weight)
-        '''As the pruning reaches the target sparsity, such as 0.1, and say the current chain length is 20
-            then, 1 - self.args.target_sparsity = 0.9, and 0.9 / 20 = 0.045, 0.9 / 0.045 = 20, and the acc_weight = 1 - (21 / 20) = -0.05, max(0, -0.05) = 0, so we gradually emphasize on pruning'''
 
         pruned_ratio_weight = 1 - acc_weight
 
-        # worker_pruned_ratio needs to be controlled by the difference of the pruned ratio between the worker's model and the global model, so that the worker has no rewards to gain after reaching the target sparsity
-        controlled_worker_pruned_ratio = max(np.nextafter(0, 1), worker_pruned_ratio - latest_block_global_model_pruned_ratio)
+        # worker_pruned_ratio needs to be controlled by the difference of the pruned ratio between the worker's model and the global model, so that the worker will not receive pruning reward if it didn't prune, and has no rewards to gain after reaching the target sparsity
+        controlled_worker_pruned_ratio = worker_pruned_ratio - latest_block_global_model_pruned_ratio
 
-        reward = 1 / (acc_weight / (worker_acc + np.nextafter(0, 1)) + pruned_ratio_weight / controlled_worker_pruned_ratio)
+        # reward = 1 / (acc_weight / (worker_acc + np.nextafter(0, 1)) + pruned_ratio_weight / controlled_worker_pruned_ratio)
+        reward = acc_weight * worker_acc + pruned_ratio_weight * controlled_worker_pruned_ratio
         return reward
         
 
@@ -359,6 +361,9 @@ class Device():
                 worker_to_acc_weight[worker_idx] += worker_acc * validator_power
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
                 self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+
+        # DEBUG
+        # print("V", self.idx, self._device_to_ungranted_reward)
         
         # get models for aggregation
         worker_to_model = {worker_idx: self._verified_worker_txs[worker_idx]['model'] for worker_idx in worker_to_acc_weight}

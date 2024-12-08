@@ -144,7 +144,7 @@ if __name__ == '__main__':
             for name, weight_params in module.named_parameters():
                 if "weight" in name:
                     # noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * torch.from_numpy(layer_to_mask[layer]).to(self.args.dev_device)
-                    noise = 3 * torch.randn(weight_params.size()) * layer_to_mask[layer]
+                    noise = args.noise_variance * torch.randn(weight_params.size()) * layer_to_mask[layer]
                     weight_params.data.add_(noise.to(device))
         print(f"User {idx} poisoned the whole neural network with variance 3.") # or should say, unpruned weights?
         

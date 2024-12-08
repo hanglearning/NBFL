@@ -12,7 +12,8 @@ for attack_type in [0, 1, 2, 3]:
     for mal in [0, 3, 6, 8]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
-
+        
+        # across different seeds
         LBFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder]
 
         LBFL_avg_stake_over_runs = []

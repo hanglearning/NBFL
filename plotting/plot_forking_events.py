@@ -1,32 +1,42 @@
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.lines as mlines
 
-# Paths to the log files
-LBFL_log_paths = [
-    "logs/LBFL_seed_40_10072024_202206_rounds_3_epochs_500_val_*_mal_0_attack_0_noise_3_rewind_1_nsamples_20_nclasses_3",
-    "logs/LBFL_seed_50_10072024_203118_rounds_3_epochs_500_val_*_mal_0_attack_0_noise_3_rewind_1_nsamples_20_nclasses_3",
-    "logs/LBFL_seed_60_10072024_203730_rounds_3_epochs_500_val_*_mal_0_attack_0_noise_3_rewind_1_nsamples_20_nclasses_3"
-]
+import os
 
-# Set y-axis labels
-y_axis_labels = ["Run 1", "Run 2", "Run 3"]
+log_base_path = '/Users/chenhang/Documents/Working'
+attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack'}
+
+y_offset = 0
+y_axis_labels = []
+
+for attack_type in [0, 1, 2, 3]:
+    for mal in [0, 3, 6, 8]:
+        if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
+            continue
+        
+        # across different seeds
+        LBFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder]
+
+        for lp in LBFL_log_paths:
+            # Open and load the pickle file
+            with open(f'{lp}/logger.pickle', 'rb') as file:
+                logger = pickle.load(file)['forking_event']
+                for comm_round, forking_indicator in logger.items():
+                    if forking_indicator:
+                        plt.scatter(comm_round, y_offset, marker='o', color='red')
+            y_axis_labels.append(f'{mal} Attackers - {attack_type_map[attack_type]}')
+            y_offset += 1
+        
+
+plt.legend(loc='best', prop={'size': 10})
+
+plt.xlabel('Communication Round')
+plt.ylabel('Run Name')
+plt.title(f'Forking Events')
 plt.yticks(range(len(y_axis_labels)), y_axis_labels)
 
-# Iterate over each log path and corresponding y-axis position
-for i, lp in enumerate(LBFL_log_paths):
-    # Open and load the pickle file
-    with open(f'{lp}/logger.pickle', 'rb') as file:
-        logger = pickle.load(file)
-        # Iterate over each communication round and forking indicator
-        for comm_round, forking_indicator in logger['forking_event'].items():
-            # Plot a circle at (comm_round, y_position) if forking_indicator is true
-            if forking_indicator == 1:
-                plt.plot(i, comm_round, 'o')
-
-# Add labels and title to the plot
-plt.xlabel('Communication Round')
-plt.ylabel('Run')
-plt.title('Forking Events in Different Runs')
-plt.grid(True)
-plt.show()
+plt.savefig(f'{log_base_path}/LBFL/logs/forking_events.png', dpi=300)
+plt.clf()
+# plt.show()
