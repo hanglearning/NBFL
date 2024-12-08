@@ -69,7 +69,7 @@ if __name__ == "__main__":
     parser.add_argument('--rewind', type=int, default=0, help="reinit ticket model parameters before training")
 
     parser.add_argument('--n_malicious', type=int, default=0)
-    parser.add_argument('--noise_variance', type=int, default=3, help="noise variance level of the injected Gaussian Noise")
+    parser.add_argument('--noise_variance', type=int, default=1, help="noise variance level of the injected Gaussian Noise")
 
     parser.add_argument('--prune_acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
     parser.add_argument('--target_sparsity', type=float, default=0.1, help='target sparsity for pruning, stop pruning if below this threshold')

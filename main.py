@@ -18,6 +18,7 @@ from pathlib import Path
 from datetime import datetime
 from pytorch_lightning import seed_everything
 from collections import defaultdict
+from copy import deepcopy
 
 from device import Device
 from util import *
@@ -72,7 +73,7 @@ parser.add_argument('--n_samples', type=int, default=20)
 parser.add_argument('--n_classes', type=int, default=3)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
-parser.add_argument('--noise_variance', type=int, default=3, help="noise variance level of the injected Gaussian Noise")
+parser.add_argument('--noise_variance', type=int, default=1, help="noise variance level of the injected Gaussian Noise")
 
 ####################### validation and rewards setting #######################
 parser.add_argument('--pass_all_models', type=int, default=0, help='turn off validation and pass all models, used for debug or create baselines')
@@ -367,7 +368,7 @@ def main():
 
         ### record pos book ###
         for device in devices_list:
-            logger["pos_book"][comm_round][device.idx] = device._pos_book
+            logger["pos_book"][comm_round][device.idx] = deepcopy(device._pos_book)
 
         ### record when a winning block from a malicious validator is accepted in network ###
         logger['malicious_winning_count'][comm_round] = 0
@@ -382,7 +383,7 @@ def main():
             pickle.dump(logger, f)
 
         # generate heatmap for the pos book
-        plot_pos_book(logger["pos_book"], args.log_dir, comm_round)
+        plot_pos_book(logger["pos_book"], args.log_dir, comm_round, plot_diff=True)
 
 if __name__ == "__main__":
     main()

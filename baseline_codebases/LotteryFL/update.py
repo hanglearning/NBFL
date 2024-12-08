@@ -117,7 +117,7 @@ class LocalUpdate(object):
                 batch_loss.append(loss.item())
             
             acc = test_by_data_set(model, self.trainloader, device)['MulticlassAccuracy'][0]
-            if acc > max_acc:
+            if acc >= max_acc:
                 # print(self.idx, "epoch", epoch + 1, acc)
                 max_model = copy.deepcopy(model)
                 max_acc = acc

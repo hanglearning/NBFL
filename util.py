@@ -526,24 +526,44 @@ def what_samples(dataloader):
 		total += count
 	print("Total count", total)
 
-def plot_pos_book(pos_book, log_dir, comm_round):
+def subtract_nested_dicts(dict1, dict2):
+    # Get all unique keys from both outer dictionaries
+    outer_keys = set(dict1.keys()).union(set(dict2.keys()))
+    
+    result = {}
+    for outer_key in outer_keys:
+        result[outer_key] = {}
+        # Get all unique keys from both inner dictionaries
+        inner_keys = set(dict1.get(outer_key, {}).keys()).union(set(dict2.get(outer_key, {}).keys()))
+        for inner_key in inner_keys:
+            result[outer_key][inner_key] = dict1.get(outer_key, {}).get(inner_key, 0) - dict2.get(outer_key, {}).get(inner_key, 0)
+    
+    return result
+
+def plot_pos_book(pos_book, log_dir, comm_round, plot_diff=True):
 	'''
 		Debug the rewarding function to see if it rewards more to the 
-		legitimates and less to the maliciouses
+		legitimates and less to the maliciouses.
+		If not plot_diff, plot the current pos_book.
 	'''
 	os.makedirs(f'{log_dir}/pos_heat_maps/', exist_ok=True)
-	pos_book = pos_book[comm_round]
+	cur_pos_book = pos_book[comm_round]
+	if plot_diff and comm_round > 1:
+		# Get the previous pos_book
+		prev_pos_book = pos_book[comm_round - 1]
+		# Calculate the difference between the current and previous pos_books
+		cur_pos_book = subtract_nested_dicts(cur_pos_book, prev_pos_book)
 	# Convert the dictionary to a 2D array
-	rows = sorted(pos_book.keys())
-	cols = sorted(pos_book[rows[0]].keys())
-	array = [[pos_book[row][col] for col in cols] for row in rows]
+	rows = sorted(cur_pos_book.keys())
+	cols = sorted(cur_pos_book[rows[0]].keys())
+	array = [[cur_pos_book[row][col] for col in cols] for row in rows]
 
 	# Transpose the array to exchange rows and columns
 	transposed_array = list(map(list, zip(*array)))
 
 	# Generate the heat map
 	plt.figure(figsize=(16, 12))
-	sns.heatmap(transposed_array, annot=True, cmap='Reds', cbar=True, xticklabels=rows, yticklabels=cols)
+	sns.heatmap(transposed_array, annot=True, fmt=".4f", cmap='Reds', cbar=True, xticklabels=rows, yticklabels=cols)
 
 	# Add labels and title
 	plt.xlabel('Book Owner ID')

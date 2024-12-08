@@ -91,6 +91,7 @@ def args_parser():
 
     parser.add_argument('--log_dir', type=str, default="./logs")
     parser.add_argument('--num_workers', type=int, default=0) # for pytorch data loader
+    parser.add_argument('--noise_variance', type=int, default=1, help="noise variance level of the injected Gaussian Noise")
 
 
     args = parser.parse_args()
