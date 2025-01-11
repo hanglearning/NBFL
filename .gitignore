@@ -6,5 +6,4 @@ logs/**
 baseline_codebases/CELL_FedAvg_Standalone/data/**
 baseline_codebases/LotteryFL/data/**
 *.pyc
-.vscode
 .DS_Store
