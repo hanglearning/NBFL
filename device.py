@@ -125,7 +125,7 @@ class Device():
                             self.args.dev_device,
                             self.args.train_verbose)
                 acc = self.eval_model_by_train(self.model)
-                if acc >= max_acc:
+                if acc > max_acc:
                     max_model = copy_model(self.model, self.args.dev_device)
                     max_acc = acc
                     max_model_epoch = epoch + 1
