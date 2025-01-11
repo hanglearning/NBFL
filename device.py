@@ -102,7 +102,8 @@ class Device():
 
 
         # init max_acc as the initial global model acc on local training set
-        max_acc = self.eval_model_by_train(self.model)
+        init_acc = self.eval_model_by_train(self.model)
+        accs = [init_acc]
 
         if self._is_malicious and self.args.attack_type == 1:
             # skip training and poison local model on trainable weights before submission
@@ -114,7 +115,7 @@ class Device():
             max_model = copy_model(self.model, self.args.dev_device)
             max_model_epoch = epoch = 0
             # train to max accuracy
-            while epoch < max_epoch and max_acc != 1.0:
+            while epoch < max_epoch and accs[-1] != 1.0:
                 if self.args.train_verbose:
                     print(f"Worker={self.idx}, epoch={epoch + 1}")
 
@@ -125,19 +126,30 @@ class Device():
                             self.args.dev_device,
                             self.args.train_verbose)
                 acc = self.eval_model_by_train(self.model)
-                if acc > max_acc:
-                    max_model = copy_model(self.model, self.args.dev_device)
-                    max_acc = acc
-                    max_model_epoch = epoch + 1
+                # if acc > max_acc: # not using >=, as that didn't give good accuracy, possibly too overfit?
+                #     max_model = copy_model(self.model, self.args.dev_device)
+                #     max_acc = acc
+                #     max_model_epoch = epoch + 1
+                accs.append(acc)
+                # Convergence check
+                self.args.patience = 3
+                self.args.tolerance = 0.001
+                if len(accs) > self.args.patience:
+                    recent_accs = accs[-self.args.patience:]
+                    if all(abs(recent_accs[i] - recent_accs[i - 1]) < self.args.tolerance for i in range(1, len(recent_accs))):
+                        print(f"Worker {self.idx} training has converged at epoch {epoch + 1}.")
+                        max_model = copy_model(self.model, self.args.dev_device)
+                        max_model_epoch = epoch + 1
+                        break
 
                 epoch += 1
 
 
-            print(f"Worker {self.idx} with max training acc {max_acc} arrived at epoch {max_model_epoch}.")
+            print(f"Worker {self.idx} with convergence training acc {recent_accs[-1]} arrived at epoch {max_model_epoch}.")
             logger['local_max_epoch'][comm_round][self.idx] = max_model_epoch
 
             self.model = max_model
-            self.max_model_acc = max_acc
+            self.max_model_acc = accs[-1]
 
         logger['local_max_acc'][comm_round][self.idx] = self.max_model_acc
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
