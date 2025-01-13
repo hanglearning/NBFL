@@ -206,6 +206,9 @@ def main():
     logger['malicious_winning_count'] = {r: 0 for r in range(1, args.rounds + 1)}
 
     logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
+
+    logger["validator_to_worker_acc"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
     
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
@@ -250,7 +253,7 @@ def main():
             device.worker_to_model_sig = {}           
             device.worker_to_acc = {}
             device._device_to_ungranted_reward = defaultdict(float)
-            device.worker_to_acc_weight = {}
+            device.worker_to_model_weight = {}
             
         ''' Device Starts LBFL '''
 
@@ -365,6 +368,10 @@ def main():
                     forking = 1
                     break
         logger['forking_event'][comm_round] = forking
+
+        ### record validation accuracies ###
+        for device in init_online_devices:
+            logger["validator_to_worker_acc"][comm_round][device.idx] = deepcopy(device.worker_to_acc)
 
         ### record pos book ###
         for device in devices_list:

@@ -5,6 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "LBFL seed 40 mal 0",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "0", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "0", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--prune_acc_drop_threshold", "0.05", "--peer_percent", "1", "--worker_prune_acc_trigger", "0.8"]
+        },
+        {
             "name": "LBFL seed 40 mal 6 attack 1",
             "type": "python",
             "request": "launch",

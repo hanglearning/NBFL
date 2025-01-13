@@ -68,7 +68,7 @@ class Device():
         self.worker_to_model_sig = {}
         self.worker_to_acc = {}
         self._device_to_ungranted_reward = defaultdict(float)
-        self.worker_to_acc_weight = {}  # used to show the validation performance against the malicious devices in its block
+        self.worker_to_model_weight = {}  # used to show the validation performance against the malicious devices in its block
         # init key pair
         self._modulus = None
         self._private_key = None
@@ -195,6 +195,7 @@ class Device():
         print(f"Pruned model before and after accuracy: {init_model_acc:.2f}, {after_pruning_acc:.2f}")
         print(f"Pruned amount: {after_pruned_ratio - init_pruned_ratio:.2f}")
 
+        logger['pruned_amount'][comm_round][self.idx] = after_pruned_ratio - init_pruned_ratio
         logger['after_prune_sparsity'][comm_round][self.idx] = 1 - after_pruned_ratio
         logger['after_prune_acc'][comm_round][self.idx] = after_pruning_acc
         logger['after_prune_local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
@@ -333,7 +334,7 @@ class Device():
         curr_chain_length = self.blockchain.get_chain_length()
 
         est_remaining_prune_rounds = (1 - self.args.target_sparsity - worker_pruned_ratio) / (latest_block_global_model_pruned_ratio / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds for the worker to prune
-        est_remaining_train_rounds = (1 - worker_acc) / (worker_acc / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds for the worker to train
+        est_remaining_train_rounds = (1 - worker_acc) / (worker_acc / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds for the worker to train, assuming worker's accuracy increase is averagely incremental
         est_remaining_rounds = max(est_remaining_prune_rounds, est_remaining_train_rounds)
         acc_weight = 1 - ( (curr_chain_length + 1) / (curr_chain_length + 1 + est_remaining_rounds) ) # (curr_chain_length + 1) is technically the current communication round, but sometimes no device appended a block in the previous round, so this is more precise
         acc_weight = max(0, acc_weight)
@@ -354,26 +355,30 @@ class Device():
 
         # aggregate votes and accuracies - normalize by validator_power, defined by the historical stake of the validator + 1 (to avoid float point number and 0 division)
         # for the reward of the validator itself, it is directly adding its own max model accuracy, as an incentive to become a validator
-        worker_to_acc_weight = defaultdict(float)
+        worker_to_model_weight = defaultdict(float)
+        latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in self._verified_validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
-                worker_to_acc_weight[worker_idx] += worker_acc * validator_power
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+                worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
+                # self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+        
+        self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
         # DEBUG
         # print("V", self.idx, self._device_to_ungranted_reward)
         
         # get models for aggregation
-        worker_to_model = {worker_idx: self._verified_worker_txs[worker_idx]['model'] for worker_idx in worker_to_acc_weight}
+        worker_to_model = {worker_idx: self._verified_worker_txs[worker_idx]['model'] for worker_idx in worker_to_model_weight}
 
         # normalize weights to between 0 and 1
-        worker_to_acc_weight = {worker_idx: acc/sum(worker_to_acc_weight.values()) for worker_idx, acc in worker_to_acc_weight.items()}
-        self.worker_to_acc_weight = worker_to_acc_weight
+        worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
+        # self._device_to_ungranted_reward[worker_idx] = worker_to_model_weight
+        self.worker_to_model_weight = worker_to_model_weight
         
         # produce final global model
-        self._final_global_model = weighted_fedavg(worker_to_acc_weight, worker_to_model, device=self.args.dev_device)
+        self._final_global_model = weighted_fedavg(worker_to_model_weight, worker_to_model, device=self.args.dev_device)
 
     def validator_post_prune(self): # prune by the weighted average of the pruned amount of the selected models
 
@@ -710,16 +715,17 @@ class Device():
         layer_to_model_sig_row, layer_to_model_sig_col = sum_over_model_params(winning_block.global_model)
         
         # perform model signature aggregation by the same rule in produce_global_model_and_reward()
-        worker_to_acc_weight = defaultdict(float)
+        worker_to_model_weight = defaultdict(float)
         device_to_should_reward = defaultdict(float)
+        latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in winning_block.validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
-                worker_to_acc_weight[worker_idx] += worker_acc * validator_power
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
-                # device_to_should_reward[worker_idx] += worker_acc
+                worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
+                # device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
         
+        device_to_should_reward = deepcopy(worker_to_model_weight)
         
         # (1) verify if validator honestly assigned reward to devices
         # validator_self_assigned_stake = winning_block.device_to_reward[winning_block.produced_by] - self._pos_book[winning_block.produced_by]
@@ -736,12 +742,12 @@ class Device():
 
         # (2) verify if validator honestly aggregated the models
         # normalize weights to between 0 and 1
-        worker_to_acc_weight = {worker_idx: acc/sum(worker_to_acc_weight.values()) for worker_idx, acc in worker_to_acc_weight.items()}
+        worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
         
         # apply weights to worker's model signatures
         workers_layer_to_model_sig_row = {}
         workers_layer_to_model_sig_col = {}
-        for worker_idx, acc_weight in worker_to_acc_weight.items():
+        for worker_idx, acc_weight in worker_to_model_weight.items():
             model_sig_row = winning_block.worker_to_model_sig[worker_idx]['model_sig_row']
             model_sig_col = winning_block.worker_to_model_sig[worker_idx]['model_sig_col']
             for layer in model_sig_row:
@@ -811,14 +817,14 @@ class Device():
             print(f"\nNo verified winning block to check validation performance. Device {self.idx} may resync to last time's picked winning validator({self._resync_to})'s chain.")
             return
 
-        worker_to_acc_weight = idx_to_device[self.verified_winning_block.produced_by].worker_to_acc_weight
+        worker_to_model_weight = idx_to_device[self.verified_winning_block.produced_by].worker_to_model_weight
 
         ''' BELOW MUST BE CONSISTENT WITH THE LOGIC IN produce_global_model_and_reward() '''
         i = 1
-        for widx, acc_weight in sorted(worker_to_acc_weight.items(), key=lambda x: x[1]):
+        for widx, acc_weight in sorted(worker_to_model_weight.items(), key=lambda x: x[1]):
             if acc_weight == 0: continue
             if idx_to_device[widx]._is_malicious:
-                if i < len(worker_to_acc_weight) // 2:
+                if i < len(worker_to_model_weight) // 2:
                     print(f"Malicious worker {widx} has accuracy-model-weight {acc_weight:.3f}, ranked {i}, in the lower half (lower rank means smaller weight).")
                 else:
                     print("\033[91m" + f"Malicious worker {widx} has accuracy-model-weight {acc_weight:.2f}, ranked {i}, in the higher half (higher rank means heavier weight)." + "\033[0m")
