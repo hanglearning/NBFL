@@ -364,7 +364,7 @@ class Device():
                 worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
                 # self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
         
-        self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
+        # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
         # DEBUG
         # print("V", self.idx, self._device_to_ungranted_reward)
@@ -374,7 +374,7 @@ class Device():
 
         # normalize weights to between 0 and 1
         worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
-        # self._device_to_ungranted_reward[worker_idx] = worker_to_model_weight
+        self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
         self.worker_to_model_weight = worker_to_model_weight
         
         # produce final global model
@@ -725,7 +725,7 @@ class Device():
                 worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
                 # device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
         
-        device_to_should_reward = deepcopy(worker_to_model_weight)
+        # device_to_should_reward = deepcopy(worker_to_model_weight)
         
         # (1) verify if validator honestly assigned reward to devices
         # validator_self_assigned_stake = winning_block.device_to_reward[winning_block.produced_by] - self._pos_book[winning_block.produced_by]
@@ -734,16 +734,23 @@ class Device():
         last_block_global_model_pruned_ratio = get_pruned_ratio(last_block.global_model) if last_block else 0
         new_global_model_pruned_ratio = get_pruned_ratio(winning_block.global_model)
         validator_should_self_assigned_reward = max(0, new_global_model_pruned_ratio - last_block_global_model_pruned_ratio)
-        device_to_should_reward[winning_block.produced_by] += validator_should_self_assigned_reward
+        # device_to_should_reward[winning_block.produced_by] += validator_should_self_assigned_reward
 
-        if device_to_should_reward != winning_block.device_to_reward:
-            print(f"{self.role} {self.idx}'s picked winning block has invalid reward assignment. Block discarded.")
-            return False
+        # if device_to_should_reward != winning_block.device_to_reward:
+        #     print(f"{self.role} {self.idx}'s picked winning block has invalid reward assignment. Block discarded.")
+        #     return False
 
         # (2) verify if validator honestly aggregated the models
         # normalize weights to between 0 and 1
         worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
+        device_to_should_reward = deepcopy(worker_to_model_weight)
         
+        device_to_should_reward[winning_block.produced_by] += validator_should_self_assigned_reward
+
+        if device_to_should_reward != winning_block.device_to_reward:
+            print(f"{self.role} {self.idx}'s picked winning block has invalid reward assignment or device's pos book is inconsistent with the validator. Block discarded.")
+            return False
+
         # apply weights to worker's model signatures
         workers_layer_to_model_sig_row = {}
         workers_layer_to_model_sig_col = {}
