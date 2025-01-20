@@ -112,8 +112,8 @@ class Client():
 
     def worker_prune(self, comm_round, logger):
 
-        if not self._is_malicious and self.max_model_acc < self.args.worker_prune_acc_trigger:
-            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.worker_prune_acc_trigger}. Skip pruning.")
+        if not self._is_malicious and self.max_model_acc < self.args.prune_acc_trigger:
+            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.prune_acc_trigger}. Skip pruning.")
             return
 
         # model prune percentage
@@ -143,10 +143,10 @@ class Client():
             model_acc = self.eval_model_by_train(pruned_model)
 
             # prune until the accuracy drop exceeds the threshold or below the target sparsity
-            if init_model_acc - model_acc > self.args.prune_acc_drop_threshold or 1 - to_prune_amount <= self.args.target_sparsity:
+            if init_model_acc - model_acc > self.args.acc_drop_threshold or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 # print("pruned amount", to_prune_amount, "target_sparsity", self.args.target_sparsity)
-                # print(f"init_model_acc - model_acc: {init_model_acc- model_acc} > self.args.prune_acc_drop_threshold: {self.args.prune_acc_drop_threshold}")
+                # print(f"init_model_acc - model_acc: {init_model_acc- model_acc} > self.args.acc_drop_threshold: {self.args.acc_drop_threshold}")
                 self.model = copy_model(last_pruned_model, self.args.dev_device)
                 self.max_model_acc = accs[-1]
                 break

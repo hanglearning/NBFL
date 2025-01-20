@@ -144,8 +144,8 @@ class Device():
 
     def worker_prune(self, comm_round, logger):
 
-        if not self._is_malicious and self.max_model_acc < self.args.worker_prune_acc_trigger:
-            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.worker_prune_acc_trigger}. Skip pruning.")
+        if not self._is_malicious and self.max_model_acc < self.args.prune_acc_trigger:
+            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.prune_acc_trigger}. Skip pruning.")
             return
 
         # model prune percentage
@@ -177,7 +177,7 @@ class Device():
             model_acc = self.eval_model_by_train(pruned_model)
 
             # prune until the accuracy drop exceeds the threshold or below the target sparsity
-            if init_model_acc - model_acc > self.args.prune_acc_drop_threshold or 1 - to_prune_amount <= self.args.target_sparsity:
+            if init_model_acc - model_acc > self.args.acc_drop_threshold or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 self.model = copy_model(last_pruned_model, self.args.dev_device)
                 self.max_model_acc = accs[-1]
@@ -495,8 +495,8 @@ class Device():
         if to_resync_chain.get_chain_length() == 0:
             print(f"resync_to_device {self._resync_to}'s chain length is 0. Chain not resynced. Resync next round.") # may resync to the same device, but the device may have appended other blocks to make its chain valid at the beginning of the next round
             return False
-        if len(to_resync_chain.chain) >= 2 and to_resync_chain.chain[-2].produced_by == to_resync_chain.chain[-1].produced_by == winning_block.produced_by:
-            print(f"resync_to_device {self._resync_to}'s chain's last two blocks' producer is identical to the winning_block's ({winning_block.produced_by}). Chain not resynced. Resync next round.")
+        if len(to_resync_chain.chain) >= 1 and to_resync_chain.chain[-1].produced_by == winning_block.produced_by:
+            print(f"resync_to_device {self._resync_to}'s chain's last block's producer is identical to the winning_block's ({winning_block.produced_by}). Chain not resynced. Resync next round.")
             return False
         return True
     
@@ -586,7 +586,7 @@ class Device():
         for i in range(1, len(blockchain_to_check)):
             if blockchain_to_check[i].previous_block_hash != blockchain_to_check[i-1].compute_hash():
                 return False
-            if i >= 2 and blockchain_to_check[i].produced_by == blockchain_to_check[i-1].produced_by == blockchain_to_check[i-2].produced_by:
+            if i >= 1 and blockchain_to_check[i].produced_by == blockchain_to_check[i-1].produced_by:
                 return False
         return True
         
@@ -776,7 +776,11 @@ class Device():
 
         if not self.verified_winning_block:
             print(f"\nNo verified winning block to append. Device {self.idx} may resync to last time's picked winning validator({self._resync_to})'s chain.")
-            return
+            return False
+
+        if self.blockchain.get_chain_length() > 1 and self.verified_winning_block.previous_block_hash != self.blockchain.get_last_block_hash():
+            print(f"\nDevice {self.idx} picked block's previous hash conflicts the hash of its latest block. Device {self.idx} may resync to last time's picked winning validator({self._resync_to})'s chain.") # this could happen due to a chain resync but a winning block has already been picked
+            return False
 
         self._resync_to = self.verified_winning_block.produced_by # in case of offline, resync to this validator's chain
         
@@ -794,7 +798,8 @@ class Device():
         self.blockchain.chain.append(deepcopy(self.verified_winning_block))
 
         print(f"\n{self.role} {self.idx} has appended the winning block produced by {self.verified_winning_block.produced_by}.")
-
+        return True
+    
     ''' Helper Functions '''
 
     def compare_dicts_of_tensors(self, dict1, dict2, atol=1e-3, rtol=1e-3):
