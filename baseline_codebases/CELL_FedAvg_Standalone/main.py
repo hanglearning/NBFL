@@ -71,7 +71,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_malicious', type=int, default=0)
     parser.add_argument('--noise_variance', type=int, default=1, help="noise variance level of the injected Gaussian Noise")
 
-    parser.add_argument('--prune_acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
+    parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
     parser.add_argument('--target_sparsity', type=float, default=0.1, help='target sparsity for pruning, stop pruning if below this threshold')
 
     # Run Type
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     parser.add_argument('--prune_step', type=float, default=0.15)
 
     # LBFL needs
-    parser.add_argument('--worker_prune_acc_trigger', type=float, default=0.8, help='must achieve this accuracy to trigger worker to post prune its local model')
+    parser.add_argument('--prune_acc_trigger', type=float, default=0.8, help='must achieve this accuracy to trigger worker to post prune its local model')
     parser.add_argument('--max_prune_step', type=float, default=0.05)
 
     args = parser.parse_args()
