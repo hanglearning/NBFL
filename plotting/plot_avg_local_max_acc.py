@@ -7,7 +7,7 @@ log_base_path = '/Users/chenhang/Documents/Working'
 logger_concerning = 'local_max_acc'
 y_axis_label = 'Accuracy'
 
-for attack_type in [0, 1, 2, 3]:
+for attack_type in [0, 1, 3]:
     for mal in [0, 3, 6, 8]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
@@ -20,6 +20,7 @@ for attack_type in [0, 1, 2, 3]:
         run_names = ['LBFL', 'Standalone', 'FedAvg', 'CELL', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'CELL', 'LotteryFL']
         colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
 
+        # run_names = ['LBFL']
         for i, rn in enumerate(run_names):
             vars()[f'{rn}_avg_values_over_runs'] = []
 
@@ -41,6 +42,12 @@ for attack_type in [0, 1, 2, 3]:
                 color=colors[i],       # The outline color
                 alpha=0.2)          # Transparency of the fill
             plt.plot(range(1, len(mean_line) + 1), mean_line, color=colors[i], label=rn)
+
+            # Add text annotations every 5 x-axis ticks
+            x = 0
+            plt.text(x + 1, mean_line[x], f'{mean_line[x]:.2f}', ha='center', va='bottom', fontsize=8, color='black')
+            for x in range(4, len(mean_line), 5):
+                plt.text(x + 1, mean_line[x], f'{mean_line[x]:.2f}', ha='center', va='bottom', fontsize=8, color='black')
 
         plt.legend(loc='best')
         plt.xlabel('Communication Round')
