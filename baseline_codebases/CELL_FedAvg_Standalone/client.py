@@ -91,7 +91,7 @@ class Client():
                         self.args.train_verbose)
             acc = self.eval_model_by_train(self.model)
             # print(epoch + 1, acc)
-            if acc >= max_acc:
+            if acc > max_acc:
                 # print(self.idx, "epoch", epoch + 1, acc)
                 max_model = copy_model(self.model, self.args.dev_device)
                 max_acc = acc

@@ -7,7 +7,7 @@ log_base_path = '/Users/chenhang/Documents/Working'
 logger_concerning = 'local_test_acc'
 y_axis_label = 'Accuracy'
 
-for attack_type in [0, 1, 2, 3]:
+for attack_type in [0, 1, 3]:
     for mal in [0, 3, 6, 8]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
