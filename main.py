@@ -110,7 +110,7 @@ parser.add_argument('--show_all_validation_performance', type=int, default=1, he
 parser.add_argument('--show_validation_performance_in_block', type=int, default=1, help='0 - do not show, 1 - show the validation performance against the malicious devices in its block')
 
 ####################### other settings #######################
-parser.add_argument('--save_init_global_model', type=int, default=1, help='0 - do not save, 1 - save')
+parser.add_argument('--save_init_global_model', type=int, default=0, help='0 - do not save, 1 - save')
 
 
 args = parser.parse_args()

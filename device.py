@@ -144,13 +144,13 @@ class Device():
 
     def worker_prune(self, comm_round, logger):
 
-        if not self._is_malicious and self.max_model_acc < self.args.prune_acc_trigger:
+        if self.args.attack_type != 1 and self.max_model_acc < self.args.prune_acc_trigger:
             print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.prune_acc_trigger}. Skip pruning.")
             return
 
         # model prune percentage
         init_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
-        if not self._is_malicious and 1 - init_pruned_ratio <= self.args.target_sparsity:
+        if self.args.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
             print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
             return
         
@@ -362,7 +362,7 @@ class Device():
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
                 worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
-                # self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
         
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
@@ -374,7 +374,7 @@ class Device():
 
         # normalize weights to between 0 and 1
         worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
-        self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
+        # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
         self.worker_to_model_weight = worker_to_model_weight
         
         # produce final global model
@@ -723,7 +723,7 @@ class Device():
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
                 worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
-                # device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
         
         # device_to_should_reward = deepcopy(worker_to_model_weight)
         
@@ -743,7 +743,7 @@ class Device():
         # (2) verify if validator honestly aggregated the models
         # normalize weights to between 0 and 1
         worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
-        device_to_should_reward = deepcopy(worker_to_model_weight)
+        # device_to_should_reward = deepcopy(worker_to_model_weight)
         
         device_to_should_reward[winning_block.produced_by] += validator_should_self_assigned_reward
 
