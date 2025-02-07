@@ -262,9 +262,10 @@ def train(
 		
 		optimizer.step()
 
+	gradients = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
 
 	torch.set_grad_enabled(False)
-
+	return gradients
 
 @ torch.no_grad()
 def test_by_data_set(
@@ -527,18 +528,18 @@ def what_samples(dataloader):
 	print("Total count", total)
 
 def subtract_nested_dicts(dict1, dict2):
-    # Get all unique keys from both outer dictionaries
-    outer_keys = set(dict1.keys()).union(set(dict2.keys()))
-    
-    result = {}
-    for outer_key in outer_keys:
-        result[outer_key] = {}
-        # Get all unique keys from both inner dictionaries
-        inner_keys = set(dict1.get(outer_key, {}).keys()).union(set(dict2.get(outer_key, {}).keys()))
-        for inner_key in inner_keys:
-            result[outer_key][inner_key] = dict1.get(outer_key, {}).get(inner_key, 0) - dict2.get(outer_key, {}).get(inner_key, 0)
-    
-    return result
+	# Get all unique keys from both outer dictionaries
+	outer_keys = set(dict1.keys()).union(set(dict2.keys()))
+	
+	result = {}
+	for outer_key in outer_keys:
+		result[outer_key] = {}
+		# Get all unique keys from both inner dictionaries
+		inner_keys = set(dict1.get(outer_key, {}).keys()).union(set(dict2.get(outer_key, {}).keys()))
+		for inner_key in inner_keys:
+			result[outer_key][inner_key] = dict1.get(outer_key, {}).get(inner_key, 0) - dict2.get(outer_key, {}).get(inner_key, 0)
+	
+	return result
 
 def plot_pos_book(pos_book, log_dir, comm_round, plot_diff=True):
 	'''

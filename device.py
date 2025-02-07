@@ -296,6 +296,48 @@ class Device():
             # malicious validator always assigns itself the maximum accuracy (1.0)
             self.worker_to_acc[self.idx] = 1.0
         
+        # vote for lazy worker/ straggler
+        def dict_to_numpy_grad_list(param_dict):
+            """
+            Converts a dict of PyTorch gradient tensors (e.g., from model.named_parameters())
+            to a list of NumPy arrays.
+            """
+            grad_list = []
+            for param_name, grad_tensor in param_dict.items():
+                # Ensure it's a tensor with valid gradients
+                if isinstance(grad_tensor, torch.Tensor):
+                    # Convert to CPU and NumPy
+                    grad_list.append(grad_tensor.cpu().numpy())
+                else:
+                    print(f"Warning: '{param_name}' is not a valid tensor. Skipping.")
+            return grad_list
+        
+        def compute_total_gradient_norm(gradients):
+            """
+            Computes the total L2 norm of a list of gradient arrays.
+            :param gradients: List of numpy arrays (each array is the gradient for a layer)
+            :return: Total L2 norm (float)
+            """
+            total_squared_sum = sum(np.sum(np.square(g)) for g in gradients)
+            total_norm = np.sqrt(total_squared_sum)
+            return total_norm
+
+        self.worker_to_grad = {}
+        for widx, wtx in self._verified_worker_txs.items():
+            worker_model = deepcopy(wtx['model']) # avoid in-place modification as wtx['model'] will be used when aggregating models
+            # train one epoch by local dataset and get gradients
+            gradients = util_train(worker_model,
+                        self._train_loader,
+                        self.args.optimizer,
+                        self.args.lr,
+                        self.args.dev_device,
+                        self.args.train_verbose)
+            
+            self.worker_to_grad[widx] = compute_total_gradient_norm(dict_to_numpy_grad_list(gradients))
+        
+        # normalize gradients
+        self.worker_to_normg = {worker_idx: 1 - grad/sum(self.worker_to_grad.values()) for worker_idx, grad in self.worker_to_grad.items()}
+        
         if self.args.show_all_validation_performance:
             print(f"\nShowing validator {self.idx}'s validation performance against malicious workers out of total {len(self.worker_to_acc)} workers:")
             i = 1
@@ -320,6 +362,7 @@ class Device():
             'validator_idx' : self.idx,
             'rsa_pub_key': self.return_rsa_pub_key(),
             'worker_to_acc' : self.worker_to_acc,
+            'worker_to_normg': self.worker_to_normg
         }
         validator_tx['tx_sig'] = self.sign_msg(str(validator_tx))
         self._validator_tx = validator_tx
@@ -327,7 +370,7 @@ class Device():
     def broadcast_validator_tx(self, online_validators):
         return
 
-    def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio):
+    def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio, worker_norm_normg):
         # # using harmonic mean with linear shift emphasize from accuracy to pruned_ratio
         # using linear shift emphasize from accuracy to pruned_ratio
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
@@ -345,7 +388,7 @@ class Device():
         controlled_worker_pruned_ratio = worker_pruned_ratio - latest_block_global_model_pruned_ratio
 
         # reward = 1 / (acc_weight / (worker_acc + np.nextafter(0, 1)) + pruned_ratio_weight / controlled_worker_pruned_ratio)
-        reward = acc_weight * worker_acc + pruned_ratio_weight * controlled_worker_pruned_ratio
+        reward = (acc_weight * worker_acc + pruned_ratio_weight * controlled_worker_pruned_ratio) * worker_norm_normg
         return reward
         
 
@@ -356,13 +399,27 @@ class Device():
         # aggregate votes and accuracies - normalize by validator_power, defined by the historical stake of the validator + 1 (to avoid float point number and 0 division)
         # for the reward of the validator itself, it is directly adding its own max model accuracy, as an incentive to become a validator
         worker_to_model_weight = defaultdict(float)
+        worker_to_agg_normg = defaultdict(float)
+
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in self._verified_validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
                 worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
-                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+                
+        for validator_idx, validator_tx in self._verified_validator_txs.items():
+            validator_power = self._pos_book[validator_idx] + 1
+            for worker_idx, normg in validator_tx['worker_to_normg'].items():
+                worker_to_agg_normg[worker_idx] += normg * validator_power
+        
+        worker_to_norm_normg = {worker_idx: agg_normg/sum(worker_to_agg_normg.values()) for worker_idx, agg_normg in worker_to_agg_normg.items()}
+
+        # rewarding mechanism
+        for validator_idx, validator_tx in self._verified_validator_txs.items():
+            for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
+                worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
+                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, worker_to_norm_normg[worker_idx])
         
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
@@ -717,13 +774,27 @@ class Device():
         # perform model signature aggregation by the same rule in produce_global_model_and_reward()
         worker_to_model_weight = defaultdict(float)
         device_to_should_reward = defaultdict(float)
+        worker_to_agg_normg = defaultdict(float)
+
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in winning_block.validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
                 worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
-                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+        
+        for validator_idx, validator_tx in winning_block.validator_txs.items():
+            validator_power = self._pos_book[validator_idx] + 1
+            for worker_idx, normg in validator_tx['worker_to_normg'].items():
+                worker_to_agg_normg[worker_idx] += normg * validator_power
+        
+        worker_to_norm_normg = {worker_idx: agg_normg/sum(worker_to_agg_normg.values()) for worker_idx, agg_normg in worker_to_agg_normg.items()}
+
+        # rewarding mechanism
+        for validator_idx, validator_tx in winning_block.validator_txs.items():
+            for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
+                worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
+                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, worker_to_norm_normg[worker_idx])
         
         # device_to_should_reward = deepcopy(worker_to_model_weight)
         
