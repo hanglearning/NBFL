@@ -2,16 +2,16 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.lines as mlines
-
 import os
 
+# filepath: /Users/chenhang/Documents/Working/LBFL/plotting/plot_avg_stake.py
 log_base_path = '/Users/chenhang/Documents/Working'
-attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack'}
+attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack', 4: 'Poison & Lazy Attack'}
 
-# for attack_type in [0, 1, 2, 3]:
-# for attack_type in [0, 1, 3]:
-for attack_type in [3]:
-    for mal in [0, 3, 6, 10]:
+# for attack_type in [0, 1, 3, 4]:
+for attack_type in [4]:
+    # for mal in [0, 3, 6, 10]:
+    for mal in [10]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
         
@@ -40,21 +40,29 @@ for attack_type in [3]:
         #     logger = pickle.load(file)
         color = 'green'
         for i, ml in enumerate(mean_lines):
-            if i + mal >= 20:
+            if i + 1 + mal > 20:
                 color = 'red'
+                if attack_type == 4 and (i + 1) % 2 == 0:
+                    color = 'magenta'
             plt.plot(range(1, len(ml) + 1), ml, color = color)
-
-
+            plt.annotate(f'{i + 1}', xy=(len(ml), ml[-1]), xytext=(5, 0), textcoords='offset points', color=color, fontsize=8)
 
         green_line = mlines.Line2D([], [], color='green', label="legitimate")
-        red_line = mlines.Line2D([], [], color='red', label="malicious")
+        red_line = mlines.Line2D([], [], color='red', label="poison attack")
+        magenta_line = mlines.Line2D([], [], color='magenta', label="laziness attack")
 
-        plt.legend(handles=[green_line,red_line], loc='best', prop={'size': 10})
+        plt.legend(handles=[green_line, red_line, magenta_line], loc='best', prop={'size': 8})
 
-        plt.xlabel('Communication Round')
-        plt.ylabel('Stake')
-        plt.title(f'Stake Curves - {mal} Attackers - {attack_type_map[attack_type]}')
-        
+        plt.xlabel('Communication Round', fontsize=10)
+        plt.ylabel('Stake', fontsize=10)
+        plt.title(f'Stake Curves - {mal} Attackers - {attack_type_map[attack_type]}', fontsize=12)
+
+        # Add grid based on x-axis
+        plt.grid(axis='x')
+
+        # Set x-axis ticks to display every number
+        plt.xticks(range(1, len(mean_lines[0]) + 1))
+
         plt.savefig(f'{log_base_path}/LBFL/logs/avg_stake_mal_{mal}_attack_{attack_type}.png', dpi=300)
         plt.clf()
         # plt.show()
