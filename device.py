@@ -26,6 +26,7 @@ class Device():
         self,
         idx,
         is_malicious,
+        attack_type,
         args,
         train_loader,
         test_loader,
@@ -39,6 +40,7 @@ class Device():
         self.idx = idx
         self.role = None
         self._is_malicious = is_malicious
+        self.attack_type = attack_type
         self.online = True
         self.has_appended_block = False
         self.peers = set()
@@ -67,6 +69,7 @@ class Device():
         self._pos_book = {}
         self.worker_to_model_sig = {}
         self.worker_to_acc = {}
+        self.worker_to_eu_dist = {}
         self._device_to_ungranted_reward = defaultdict(float)
         self.worker_to_model_weight = {}  # used to show the validation performance against the malicious devices in its block
         # init key pair
@@ -86,8 +89,14 @@ class Device():
 
         print()
         L_or_M = "M" if self._is_malicious else "L"
-        print(f"\n---------- {L_or_M} Worker:{self.idx} {self._user_labels} Train to Max Acc Update ---------------------")
-
+        attack_type = 'Legitimate'
+        if L_or_M == 'M':
+            if self.attack_type == 1:
+                attack_type = 'Poison Attack'
+            if self.attack_type == 3:
+                attack_type = 'Lazy'
+        
+        print(f"\n---------- {L_or_M} {attack_type} Worker:{self.idx} {self._user_labels} Train to Max Acc Update ---------------------")
         if comm_round > 1 and self.args.rewind:
         # reinitialize model with initial params
             source_params = dict(self.init_global_model.named_parameters())
@@ -97,14 +106,14 @@ class Device():
         max_epoch = self.args.epochs
 
         # lazy worker
-        if self._is_malicious and self.args.attack_type == 3:
+        if self._is_malicious and self.attack_type == 3:
             max_epoch = int(max_epoch * 0.1)
 
 
         # init max_acc as the initial global model acc on local training set
         max_acc = self.eval_model_by_train(self.model)
 
-        if self._is_malicious and self.args.attack_type == 1:
+        if self._is_malicious and self.attack_type == 1:
             # skip training and poison local model on trainable weights before submission
             self.poison_model(self.model)
             poinsoned_acc = self.eval_model_by_train(self.model)
@@ -144,13 +153,13 @@ class Device():
 
     def worker_prune(self, comm_round, logger):
 
-        if self.args.attack_type != 1 and self.max_model_acc < self.args.prune_acc_trigger:
+        if self.attack_type != 1 and self.max_model_acc < self.args.prune_acc_trigger:
             print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.prune_acc_trigger}. Skip pruning.")
             return
 
         # model prune percentage
         init_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
-        if self.args.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
+        if self.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
             print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
             return
         
@@ -283,8 +292,14 @@ class Device():
                 if self.args.validation_verbose:
                     print(f"Worker {widx} has valid model signature.")
             
-                self.worker_to_model_sig[widx] = {'model_sig_row': wtx['model_sig_row'], 'model_sig_row_sig': wtx['model_sig_row_sig'], 'model_sig_col': wtx['model_sig_col'], 'model_sig_col_sig': wtx['model_sig_col_sig'], 'worker_rsa': worker_rsa}
-            
+                self.worker_to_model_sig[widx] = {
+                    'model_sig_row': wtx['model_sig_row'], 
+                    'model_sig_row_sig': wtx['model_sig_row_sig'], 
+                    'model_sig_col': wtx['model_sig_col'], 
+                    'model_sig_col_sig': wtx['model_sig_col_sig'], 
+                    'worker_rsa': worker_rsa
+                }
+           
         for widx, wtx in self._verified_worker_txs.items():
             worker_model = wtx['model']
             # calculate accuracy by validator's local dataset
@@ -311,7 +326,6 @@ class Device():
 
             return np.linalg.norm(nn1_net - nn2_net)
 
-        self.worker_to_eu_dist = {}
         for widx, wtx in self._verified_worker_txs.items():
             worker_model = deepcopy(wtx['model'])
             # compute euclidean distance between two networks. hypothesis - undertrained model has less distance
@@ -349,7 +363,11 @@ class Device():
     def broadcast_validator_tx(self, online_validators):
         return
 
-    def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio, worker_to_norm_eu_dist):
+    def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio, norm_eu_cap, worker_norm_eu):
+        
+        if worker_norm_eu > norm_eu_cap: # defend against aggresive noisy workers
+            return 0
+        
         # # using harmonic mean with linear shift emphasize from accuracy to pruned_ratio
         # using linear shift emphasize from accuracy to pruned_ratio
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
@@ -367,7 +385,7 @@ class Device():
         controlled_worker_pruned_ratio = worker_pruned_ratio - latest_block_global_model_pruned_ratio
 
         # reward = 1 / (acc_weight / (worker_acc + np.nextafter(0, 1)) + pruned_ratio_weight / controlled_worker_pruned_ratio)
-        reward = (acc_weight * worker_acc + pruned_ratio_weight * controlled_worker_pruned_ratio) * worker_to_norm_eu_dist
+        reward = (acc_weight * worker_acc + pruned_ratio_weight * controlled_worker_pruned_ratio) * worker_norm_eu
         return reward
         
 
@@ -393,12 +411,14 @@ class Device():
                 worker_to_agg_eu_dist[worker_idx] += eu_dist * validator_power
         
         worker_to_norm_eu_dist = {worker_idx: agg_eu_dist/sum(worker_to_agg_eu_dist.values()) for worker_idx, agg_eu_dist in worker_to_agg_eu_dist.items()}
+        norm_eu_median = np.median(list(worker_to_norm_eu_dist.values()))
+        norm_eu_cap = norm_eu_median * 1.34
 
         # rewarding mechanism
         for validator_idx, validator_tx in self._verified_validator_txs.items():
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, worker_to_norm_eu_dist[worker_idx])
+                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, norm_eu_cap, worker_to_norm_eu_dist[worker_idx])
         
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
@@ -531,8 +551,8 @@ class Device():
         if to_resync_chain.get_chain_length() == 0:
             print(f"resync_to_device {self._resync_to}'s chain length is 0. Chain not resynced. Resync next round.") # may resync to the same device, but the device may have appended other blocks to make its chain valid at the beginning of the next round
             return False
-        if len(to_resync_chain.chain) >= 1 and to_resync_chain.chain[-1].produced_by == winning_block.produced_by:
-            print(f"resync_to_device {self._resync_to}'s chain's last block's producer is identical to the winning_block's ({winning_block.produced_by}). Chain not resynced. Resync next round.")
+        if len(to_resync_chain.chain) >= 2 and to_resync_chain.chain[-2].produced_by == to_resync_chain.chain[-1].produced_by == winning_block.produced_by:
+            print(f"resync_to_device {self._resync_to}'s chain's last two blocks' producer is identical to the winning_block's ({winning_block.produced_by}). To mitigate monopoly, chain not resynced. Resync next round.")  # the same validator cannot win two times consecutively - mitigate monopoly
             return False
         return True
     
@@ -622,7 +642,7 @@ class Device():
         for i in range(1, len(blockchain_to_check)):
             if blockchain_to_check[i].previous_block_hash != blockchain_to_check[i-1].compute_hash():
                 return False
-            if i >= 1 and blockchain_to_check[i].produced_by == blockchain_to_check[i-1].produced_by:
+            if i >= 2 and blockchain_to_check[i].produced_by == blockchain_to_check[i-1].produced_by == blockchain_to_check[i-2].produced_by:
                 return False
         return True
         
@@ -682,8 +702,8 @@ class Device():
             return picked_block
         
         received_validators_to_blocks = {block.produced_by: block for block in self._received_blocks.values()}
-        # the same validator cannot win two times consecutively - mitigate monopoly
-        if self.blockchain.get_chain_length() >= 1:
+        # the same validator cannot win three times consecutively - mitigate monopoly (cannot be two times, in the case that only 1 validator is selected in comm 2, all devices will never add block any more)
+        if self.blockchain.get_chain_length() >= 2 and self.blockchain.chain[-1].produced_by == self.blockchain.chain[-2].produced_by:
             received_validators_to_blocks.pop(self.blockchain.chain[-1].produced_by, None)
         received_validators_pos_book = {block.produced_by: self._pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
         if not received_validators_pos_book:
@@ -768,12 +788,14 @@ class Device():
                 worker_to_agg_eu_dist[worker_idx] += eu_dist * validator_power
         
         worker_to_norm_eu_dist = {worker_idx: agg_eu_dist/sum(worker_to_agg_eu_dist.values()) for worker_idx, agg_eu_dist in worker_to_agg_eu_dist.items()}
+        norm_eu_median = np.median(list(worker_to_norm_eu_dist.values()))
+        norm_eu_cap = norm_eu_median * 1.34
 
         # rewarding mechanism
         for validator_idx, validator_tx in winning_block.validator_txs.items():
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, worker_to_norm_eu_dist[worker_idx])
+                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, norm_eu_cap, worker_to_norm_eu_dist[worker_idx])
         
         # device_to_should_reward = deepcopy(worker_to_model_weight)
         
@@ -804,16 +826,16 @@ class Device():
         # apply weights to worker's model signatures
         workers_layer_to_model_sig_row = {}
         workers_layer_to_model_sig_col = {}
-        for worker_idx, acc_weight in worker_to_model_weight.items():
+        for worker_idx, model_weight in worker_to_model_weight.items():
             model_sig_row = winning_block.worker_to_model_sig[worker_idx]['model_sig_row']
             model_sig_col = winning_block.worker_to_model_sig[worker_idx]['model_sig_col']
             for layer in model_sig_row:
                 if layer not in workers_layer_to_model_sig_row:
-                    workers_layer_to_model_sig_row[layer] = model_sig_row[layer] * acc_weight
-                    workers_layer_to_model_sig_col[layer] = model_sig_col[layer] * acc_weight
+                    workers_layer_to_model_sig_row[layer] = model_sig_row[layer] * model_weight
+                    workers_layer_to_model_sig_col[layer] = model_sig_col[layer] * model_weight
                 else:
-                    workers_layer_to_model_sig_row[layer] += model_sig_row[layer] * acc_weight
-                    workers_layer_to_model_sig_col[layer] += model_sig_col[layer] * acc_weight
+                    workers_layer_to_model_sig_row[layer] += model_sig_row[layer] * model_weight
+                    workers_layer_to_model_sig_col[layer] += model_sig_col[layer] * model_weight
         
         if not self.compare_dicts_of_tensors(layer_to_model_sig_row, workers_layer_to_model_sig_row) or not self.compare_dicts_of_tensors(layer_to_model_sig_col, workers_layer_to_model_sig_col):
             print(f"{self.role} {self.idx}'s picked winning block has invalid workers' model signatures or PoS book is inconsistent with the block producer's.") # this could happen if the owner of this winning block A had resynced to another device B's chain, so when this device C actually resynced to B's chain, got B's pos book, but still gets A's block, which is not valid anymore. Resync in next round.
@@ -883,13 +905,13 @@ class Device():
 
         ''' BELOW MUST BE CONSISTENT WITH THE LOGIC IN produce_global_model_and_reward() '''
         i = 1
-        for widx, acc_weight in sorted(worker_to_model_weight.items(), key=lambda x: x[1]):
-            if acc_weight == 0: continue
+        for widx, model_weight in sorted(worker_to_model_weight.items(), key=lambda x: x[1]):
+            if model_weight == 0: continue
             if idx_to_device[widx]._is_malicious:
                 if i < len(worker_to_model_weight) // 2:
-                    print(f"Malicious worker {widx} has accuracy-model-weight {acc_weight:.3f}, ranked {i}, in the lower half (lower rank means smaller weight).")
+                    print(f"Malicious worker {widx} has accuracy-model-weight {model_weight:.3f}, ranked {i}, in the lower half (lower rank means smaller weight).")
                 else:
-                    print("\033[91m" + f"Malicious worker {widx} has accuracy-model-weight {acc_weight:.2f}, ranked {i}, in the higher half (higher rank means heavier weight)." + "\033[0m")
+                    print("\033[91m" + f"Malicious worker {widx} has accuracy-model-weight {model_weight:.2f}, ranked {i}, in the higher half (higher rank means heavier weight)." + "\033[0m")
             i += 1
 
 

@@ -73,7 +73,7 @@ parser.add_argument('--n_samples', type=int, default=20)
 parser.add_argument('--n_classes', type=int, default=3)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
-parser.add_argument('--noise_variance', type=int, default=1, help="noise variance level of the injected Gaussian Noise")
+parser.add_argument('--noise_variance', type=float, default=0.1, help="noise variance level of the injected Gaussian Noise")
 
 ####################### validation and rewards setting #######################
 parser.add_argument('--pass_all_models', type=int, default=0, help='turn off validation and pass all models, used for debug or create baselines')
@@ -81,7 +81,7 @@ parser.add_argument('--validate_center_threshold', type=float, default=0.1, help
 parser.add_argument('--inverse_acc_weights', type=int, default=0, help='sometimes may inverse the accuracy weights to give more weights to minority workers. ideally, malicious workers should have been filtered out and not be considered here')
 
 ####################### attack setting #######################
-parser.add_argument('--attack_type', type=int, default=0, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack')
+parser.add_argument('--attack_type', type=int, default=0, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack, 4 - model poisoning and lazy attack')
 
 ####################### pruning setting #######################
 parser.add_argument('--rewind', type=int, default=1, help="reinit ticket model parameters before training")
@@ -173,15 +173,21 @@ def main():
     
     idx_to_device = {}
     n_malicious = args.n_malicious
-    for i in range(args.n_devices):
-        is_malicious = True if args.n_devices - i <= n_malicious else False
-        device = Device(i + 1, is_malicious, args, train_loaders[i], test_loaders[i], user_labels[i], global_test_loader, init_global_model)
+    for i in range(1, args.n_devices + 1):
+        is_malicious = True if args.n_devices - i < n_malicious else False
+        attack_type = args.attack_type
+        if args.attack_type == 4:
+            if i % 2 == 1:
+                attack_type = 1 # odd number assign model poisoning attack - why not random? Because we need to keep it consistent across runs so comparison can reflect the effect of the attack
+            else:
+                attack_type = 3
+        device = Device(i, is_malicious, attack_type, args, train_loaders[i - 1], test_loaders[i - 1], user_labels[i - 1], global_test_loader, init_global_model)
         if is_malicious:
-            print(f"Assigned device {i + 1} malicious.")
+            print(f"Assigned device {i} malicious.")
             # label flipping attack
             if args.attack_type == 2:
                 device._train_loader.dataset.targets = 9 - device._train_loader.dataset.targets
-        idx_to_device[i + 1] = device
+        idx_to_device[i] = device
     
     devices_list = list(idx_to_device.values())
     for device in devices_list:
@@ -254,6 +260,7 @@ def main():
             device.worker_to_acc = {}
             device._device_to_ungranted_reward = defaultdict(float)
             device.worker_to_model_weight = {}
+            device.worker_to_eu_dist = {}
             
         ''' Device Starts LBFL '''
 
