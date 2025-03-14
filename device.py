@@ -8,6 +8,8 @@ from util import train as util_train
 from util import test_by_data_set
 from pathlib import Path
 from sklearn.cluster import KMeans
+from sklearn.cluster import DBSCAN
+from sklearn.metrics.pairwise import cosine_similarity
 
 from copy import copy, deepcopy
 from Crypto.PublicKey import RSA
@@ -69,7 +71,7 @@ class Device():
         self._pos_book = {}
         self.worker_to_model_sig = {}
         self.worker_to_acc = {}
-        self.worker_to_eu_dist = {}
+        self.worker_to_cos_sim = {}
         self._device_to_ungranted_reward = defaultdict(float)
         self.worker_to_model_weight = {}  # used to show the validation performance against the malicious devices in its block
         # init key pair
@@ -221,17 +223,17 @@ class Device():
         print(f"Device {self.idx} poisoned the whole neural network with variance {self.args.noise_variance}.") # or should say, unpruned weights?
 
     def generate_model_sig(self):
-        
-        make_prune_permanent(self.model)
+        model = deepcopy(self.model)
+        make_prune_permanent(model)
         # zero knowledge proof of model ownership
-        self.layer_to_model_sig_row, self.layer_to_model_sig_col = sum_over_model_params(self.model)
+        self.layer_to_model_sig_row, self.layer_to_model_sig_col = sum_over_model_params(model)
         
     def make_worker_tx(self):
                 
         worker_tx = {
             'worker_idx' : self.idx,
             'rsa_pub_key': self.return_rsa_pub_key(),
-            'model' : self.model,
+            'model' : self.model, # has mask and original weights
             # 'model_path' : self.last_local_model_path, # in reality could be IPFS
             'model_sig_row': self.layer_to_model_sig_row,
             'model_sig_col': self.layer_to_model_sig_col
@@ -278,7 +280,7 @@ class Device():
 
         # validate model siganture
         for widx, wtx in self._verified_worker_txs.items():
-            worker_model = wtx['model']
+            worker_model = make_prune_permanent(deepcopy(wtx['model']))
             worker_model_sig_row_sig = wtx['model_sig_row_sig']
             worker_model_sig_col_sig = wtx['model_sig_col_sig']
             worker_rsa = wtx['rsa_pub_key']
@@ -299,6 +301,10 @@ class Device():
                     'model_sig_col_sig': wtx['model_sig_col_sig'], 
                     'worker_rsa': worker_rsa
                 }
+
+        # DBSCAN cluster the workers' gradients
+        
+        # worker_to_gradients = {widx: get_model_weights(wtx['model']) for widx, wtx in self._verified_worker_txs.items()}
            
         for widx, wtx in self._verified_worker_txs.items():
             worker_model = wtx['model']
@@ -312,25 +318,37 @@ class Device():
             self.worker_to_acc[self.idx] = 1.0
         
         # vote for lazy worker/ straggler
-        def two_nn_euclidean_distance(nn1, nn2):
-
-            nn1 = get_trainable_model_weights(nn1)
-            nn2 = get_trainable_model_weights(nn2)
-
+        def two_nn_cosine_similarity(nn1, nn2):
+        
+            nn1 = get_model_weights(nn1)
+            nn2 = get_model_weights(nn2)
+        
             nn1_net = np.array([])
             nn2_net = np.array([])
-
+        
             for layer in nn1.keys():
                 nn1_net = np.concatenate([nn1_net, nn1[layer].flatten()])
                 nn2_net = np.concatenate([nn2_net, nn2[layer].flatten()])
-
-            return np.linalg.norm(nn1_net - nn2_net)
+        
+            # Reshape the arrays to 2D for cosine_similarity function
+            nn1_net = nn1_net.reshape(1, -1)
+            nn2_net = nn2_net.reshape(1, -1)
+        
+            # Compute cosine similarity
+            similarity = cosine_similarity(nn1_net, nn2_net)[0][0]
+        
+            return similarity
 
         for widx, wtx in self._verified_worker_txs.items():
+            if widx == self.idx:
+                continue
             worker_model = deepcopy(wtx['model'])
-            # compute euclidean distance between two networks. hypothesis - undertrained model has less distance
-            self.worker_to_eu_dist[widx] = two_nn_euclidean_distance(self.model, worker_model)
+            # compute cosine similarity between two networks. hypothesis - undertrained or noisy model has less or negative similarity
+            self.worker_to_cos_sim[widx] = two_nn_cosine_similarity(self.model, worker_model)
         
+        # for itself, assign the maximum similarity of the other workers
+        self.worker_to_cos_sim[self.idx] = max(self.worker_to_cos_sim.values())
+
         if self.args.show_all_validation_performance:
             print(f"\nShowing validator {self.idx}'s validation performance against malicious workers out of total {len(self.worker_to_acc)} workers:")
             i = 1
@@ -355,7 +373,7 @@ class Device():
             'validator_idx' : self.idx,
             'rsa_pub_key': self.return_rsa_pub_key(),
             'worker_to_acc' : self.worker_to_acc,
-            'worker_to_eu_dist': self.worker_to_eu_dist
+            'worker_to_cos_sim': self.worker_to_cos_sim
         }
         validator_tx['tx_sig'] = self.sign_msg(str(validator_tx))
         self._validator_tx = validator_tx
@@ -363,10 +381,7 @@ class Device():
     def broadcast_validator_tx(self, online_validators):
         return
 
-    def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio, norm_eu_cap, worker_norm_eu):
-        
-        if worker_norm_eu > norm_eu_cap: # defend against aggresive noisy workers
-            return 0
+    def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio, worker_norm_eu):
         
         # # using harmonic mean with linear shift emphasize from accuracy to pruned_ratio
         # using linear shift emphasize from accuracy to pruned_ratio
@@ -396,7 +411,7 @@ class Device():
         # aggregate votes and accuracies - normalize by validator_power, defined by the historical stake of the validator + 1 (to avoid float point number and 0 division)
         # for the reward of the validator itself, it is directly adding its own max model accuracy, as an incentive to become a validator
         worker_to_model_weight = defaultdict(float)
-        worker_to_agg_eu_dist = defaultdict(float)
+        worker_to_agg_cos_sim = defaultdict(float)
 
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in self._verified_validator_txs.items():
@@ -407,18 +422,19 @@ class Device():
                 
         for validator_idx, validator_tx in self._verified_validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
-            for worker_idx, eu_dist in validator_tx['worker_to_eu_dist'].items():
-                worker_to_agg_eu_dist[worker_idx] += eu_dist * validator_power
+            for worker_idx, cos_sim in validator_tx['worker_to_cos_sim'].items():
+                worker_to_agg_cos_sim[worker_idx] += cos_sim * validator_power
         
-        worker_to_norm_eu_dist = {worker_idx: agg_eu_dist/sum(worker_to_agg_eu_dist.values()) for worker_idx, agg_eu_dist in worker_to_agg_eu_dist.items()}
-        norm_eu_median = np.median(list(worker_to_norm_eu_dist.values()))
-        norm_eu_cap = norm_eu_median * 1.34
+        # cap negative aggregated cosine similarity to 0
+        worker_to_agg_cos_sim = {worker_idx: max(0, agg_cos_sim) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
+
+        worker_to_norm_cos_sim = {worker_idx: agg_cos_sim/sum(worker_to_agg_cos_sim.values()) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
 
         # rewarding mechanism
         for validator_idx, validator_tx in self._verified_validator_txs.items():
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, norm_eu_cap, worker_to_norm_eu_dist[worker_idx])
+                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, worker_to_norm_cos_sim[worker_idx])
         
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
@@ -773,7 +789,7 @@ class Device():
         # perform model signature aggregation by the same rule in produce_global_model_and_reward()
         worker_to_model_weight = defaultdict(float)
         device_to_should_reward = defaultdict(float)
-        worker_to_agg_eu_dist = defaultdict(float)
+        worker_to_agg_cos_sim = defaultdict(float)
 
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in winning_block.validator_txs.items():
@@ -784,18 +800,19 @@ class Device():
         
         for validator_idx, validator_tx in winning_block.validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
-            for worker_idx, eu_dist in validator_tx['worker_to_eu_dist'].items():
-                worker_to_agg_eu_dist[worker_idx] += eu_dist * validator_power
+            for worker_idx, cos_sim in validator_tx['worker_to_cos_sim'].items():
+                worker_to_agg_cos_sim[worker_idx] += cos_sim * validator_power
         
-        worker_to_norm_eu_dist = {worker_idx: agg_eu_dist/sum(worker_to_agg_eu_dist.values()) for worker_idx, agg_eu_dist in worker_to_agg_eu_dist.items()}
-        norm_eu_median = np.median(list(worker_to_norm_eu_dist.values()))
-        norm_eu_cap = norm_eu_median * 1.34
+        worker_to_agg_cos_sim = {worker_idx: max(0, agg_cos_sim) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
+
+        worker_to_norm_cos_sim = {worker_idx: agg_cos_sim/sum(worker_to_agg_cos_sim.values()) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
+
 
         # rewarding mechanism
         for validator_idx, validator_tx in winning_block.validator_txs.items():
             for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
                 worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, norm_eu_cap, worker_to_norm_eu_dist[worker_idx])
+                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio, worker_to_norm_cos_sim[worker_idx])
         
         # device_to_should_reward = deepcopy(worker_to_model_weight)
         
