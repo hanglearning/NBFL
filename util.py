@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 import torch
 
+from sklearn.preprocessing import normalize
+
 class AddGaussianNoise(object):
 	def __init__(self, mean=0., std=1.):
 		self.std = std
@@ -141,9 +143,9 @@ def weighted_fedavg(worker_to_weight, worker_to_model, device='cuda:0'):
 	"""
 		weights_to_model: dict of accuracy to model, with accuracy being weight
 	"""
-	benigh_workers = worker_to_weight.keys()
-	weights = [worker_to_weight[w] for w in benigh_workers]
-	models = [make_prune_permanent(worker_to_model[w]) for w in benigh_workers]
+	workers = worker_to_weight.keys()
+	weights = [worker_to_weight[w] for w in workers]
+	models = [make_prune_permanent(worker_to_model[w]) for w in workers]
 
 	aggr_model = models[0].__class__().to(device)
 	model_params = []
@@ -405,7 +407,7 @@ def check_mask_object_from_model(model):
 	return False
 
 
-def get_trainable_model_weights(model):
+def get_model_weights(model):
 	"""
 	Args:
 		model (_torch model_): NN Model
@@ -418,6 +420,19 @@ def get_trainable_model_weights(model):
 		if 'weight' in layer_name:
 			layer_to_param[layer_name.split('.')[0]] = param.cpu().detach().numpy()
 	return layer_to_param
+
+def flatten_model_weights(model):
+	weights = []
+	for layer_name, param in model.named_parameters():
+		if 'weight' in layer_name:
+			weights.append(param.cpu().detach().numpy().flatten())
+	return np.concatenate(weights)
+
+def get_normed_local_model_gradients(local_model, global_model):
+	local_model = flatten_model_weights(local_model)
+	global_model = flatten_model_weights(global_model)
+	return normalize((local_model - global_model).reshape(1, -1), norm='l2')
+
 
 def calc_mask_from_model_with_mask_object(model):
 	layer_to_mask = {}

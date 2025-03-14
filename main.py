@@ -175,12 +175,14 @@ def main():
     n_malicious = args.n_malicious
     for i in range(1, args.n_devices + 1):
         is_malicious = True if args.n_devices - i < n_malicious else False
-        attack_type = args.attack_type
-        if args.attack_type == 4:
+        attack_type = 0
+        if is_malicious and args.attack_type == 4:
             if i % 2 == 1:
                 attack_type = 1 # odd number assign model poisoning attack - why not random? Because we need to keep it consistent across runs so comparison can reflect the effect of the attack
-            else:
+            elif i % 2 == 0:
                 attack_type = 3
+        elif is_malicious:
+            attack_type = args.attack_type
         device = Device(i, is_malicious, attack_type, args, train_loaders[i - 1], test_loaders[i - 1], user_labels[i - 1], global_test_loader, init_global_model)
         if is_malicious:
             print(f"Assigned device {i} malicious.")
@@ -260,7 +262,7 @@ def main():
             device.worker_to_acc = {}
             device._device_to_ungranted_reward = defaultdict(float)
             device.worker_to_model_weight = {}
-            device.worker_to_eu_dist = {}
+            device.worker_to_cos_sim = {}
             
         ''' Device Starts LBFL '''
 
