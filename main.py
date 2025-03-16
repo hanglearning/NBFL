@@ -318,7 +318,7 @@ def main():
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]
             # validate model based on accuracy
-            validator.validate_models(idx_to_device)
+            validator.validate_models(idx_to_device, comm_round)
             # make validator transaction
             validator.make_validator_tx()
             # broadcast tx to all the validators

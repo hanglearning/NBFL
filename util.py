@@ -428,10 +428,10 @@ def flatten_model_weights(model):
 			weights.append(param.cpu().detach().numpy().flatten())
 	return np.concatenate(weights)
 
-def get_normed_local_model_gradients(local_model, global_model):
+def get_local_model_flattened_gradients(local_model, global_model):
 	local_model = flatten_model_weights(local_model)
 	global_model = flatten_model_weights(global_model)
-	return normalize((local_model - global_model).reshape(1, -1), norm='l2')
+	return local_model - global_model
 
 
 def calc_mask_from_model_with_mask_object(model):
