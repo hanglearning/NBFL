@@ -20,7 +20,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "6", "--seed", "40", "--epochs", "100", "--rewind", "0", "--attack_type", "1", "--network_stability", "1", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "1"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "6", "--seed", "40", "--epochs", "100", "--rewind", "0", "--attack_type", "1", "--network_stability", "1", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "0.05"]
         },
         {
             "name": "LBFL seed 40 mal 8 attack 3",
@@ -29,7 +29,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "8", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "3", "--network_stability", "1", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "1"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "8", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "3", "--network_stability", "1", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "0.1"]
         },
         {
             "name": "CELL seed 50 mal 8 attack 1",
@@ -41,13 +41,22 @@
             "args": ["--CELL", "1", "--n_clients", "20", "--n_malicious", "8", "--seed", "50", "--epochs", "100", "--rewind", "0", "--attack_type", "1", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5"]
         },
         {
-            "name": "LBFL seed 30 mal 10 attack 4",
+            "name": "LBFL seed 40 mal 8 attack 4",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "10", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "4", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "0.1"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "8", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "4", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "0.05"]
+        },
+        {
+            "name": "debug",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "10", "--seed", "50", "--epochs", "50", "--rewind", "0", "--attack_type", "1", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8"]
         },
         {
             "name": "LotteryFL debug run",
