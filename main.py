@@ -73,7 +73,7 @@ parser.add_argument('--n_samples', type=int, default=20)
 parser.add_argument('--n_classes', type=int, default=3)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
-parser.add_argument('--noise_variance', type=float, default=0.1, help="noise variance level of the injected Gaussian Noise")
+parser.add_argument('--noise_variance', type=float, default=0.05, help="noise variance level of the injected Gaussian Noise")
 
 ####################### validation and rewards setting #######################
 parser.add_argument('--pass_all_models', type=int, default=0, help='turn off validation and pass all models, used for debug or create baselines')
@@ -106,7 +106,7 @@ parser.add_argument('--top_percent_winning', type=int, default=0.3,
                     help='when picking the winning block, considering the validators having the stake within this top percent. see pick_winning_block()')
 
 ####################### debug setting #######################
-parser.add_argument('--show_all_validation_performance', type=int, default=1, help='0 - do not show, 1 - show the validation performance of EVERY validator against the malicious devices in produce_global_model_and_reward()')
+parser.add_argument('--show_all_validation_performance', type=int, default=0, help='0 - do not show, 1 - show the validation performance of EVERY validator against the malicious devices in produce_global_model_and_reward()')
 parser.add_argument('--show_validation_performance_in_block', type=int, default=1, help='0 - do not show, 1 - show the validation performance against the malicious devices in its block')
 
 ####################### other settings #######################
@@ -185,7 +185,7 @@ def main():
             attack_type = args.attack_type
         device = Device(i, is_malicious, attack_type, args, train_loaders[i - 1], test_loaders[i - 1], user_labels[i - 1], global_test_loader, init_global_model)
         if is_malicious:
-            print(f"Assigned device {i} malicious.")
+            print(f"Assigned device {i} malicious with attack type {attack_type}.")
             # label flipping attack
             if args.attack_type == 2:
                 device._train_loader.dataset.targets = 9 - device._train_loader.dataset.targets
@@ -215,7 +215,7 @@ def main():
 
     logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
 
-    logger["validator_to_worker_acc"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["validator_to_worker_acc_diff"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
     
     # save args
@@ -259,10 +259,12 @@ def main():
             device._final_global_model = None
             device.produced_block = None 
             device.worker_to_model_sig = {}           
-            device.worker_to_acc = {}
+            device.worker_to_acc_diff = {}
+            device.worker_to_euc_dist = {}
             device._device_to_ungranted_reward = defaultdict(float)
             device.worker_to_model_weight = {}
-            device.worker_to_cos_sim = {}
+            device.worker_to_direction_percent = {}
+            device.worker_to_mask_overlap_percent = {}
             
         ''' Device Starts LBFL '''
 
@@ -381,7 +383,7 @@ def main():
 
         ### record validation accuracies ###
         for device in init_online_devices:
-            logger["validator_to_worker_acc"][comm_round][device.idx] = deepcopy(device.worker_to_acc)
+            logger["validator_to_worker_acc_diff"][comm_round][device.idx] = deepcopy(device.worker_to_acc_diff)
 
         ### record pos book ###
         for device in devices_list:

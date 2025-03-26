@@ -70,10 +70,12 @@ class Device():
         self.produced_block = None
         self._pos_book = {}
         self.worker_to_model_sig = {}
-        self.worker_to_acc = {}
-        self.worker_to_cos_sim = {}
+        self.worker_to_acc_diff = {}
         self._device_to_ungranted_reward = defaultdict(float)
         self.worker_to_model_weight = {}  # used to show the validation performance against the malicious devices in its block
+        self.worker_to_euc_dist = {}
+        self.worker_to_direction_percent = {}
+        self.worker_to_mask_overlap_percent = {}
         # init key pair
         self._modulus = None
         self._private_key = None
@@ -301,104 +303,49 @@ class Device():
                     'model_sig_col_sig': wtx['model_sig_col_sig'], 
                     'worker_rsa': worker_rsa
                 }
-
-        # DBSCAN cluster the workers' gradients
         
-        # worker_to_gradients = {widx: get_model_weights(wtx['model']) for widx, wtx in self._verified_worker_txs.items()}
         latest_block_global_model = self.blockchain.get_last_block().global_model if self.blockchain.get_chain_length() > 0 else self.init_global_model
-        worker_to_local_global_euc_dist = {}
+        
+        v_grad = get_local_model_flattened_gradients(latest_block_global_model, self.model)
+        g_acc = self.eval_model_by_train(latest_block_global_model)
+
         for widx, wtx in self._verified_worker_txs.items():
             worker_model = wtx['model']
             # calculate accuracy by validator's local dataset
-            self.worker_to_acc[widx] = self.eval_model_by_train(worker_model)
-            worker_to_local_global_euc_dist[widx] = np.linalg.norm(flatten_model_weights(latest_block_global_model) - flatten_model_weights(worker_model))
-
-        # add itself's accuracy
-        self.worker_to_acc[self.idx] = self.max_model_acc
-        if self._is_malicious:
-            # malicious validator always assigns itself the maximum accuracy (1.0)
-            self.worker_to_acc[self.idx] = 1.0
-
-        self.worker_to_gradients = {}
+            self.worker_to_acc_diff[widx] = max(self.eval_model_by_train(worker_model) - g_acc, 0)
+            # calculate the euclidean distance between the worker's model and the latest global model
+            self.worker_to_euc_dist[widx] = np.linalg.norm(flatten_model_weights(latest_block_global_model) - flatten_model_weights(worker_model))
+            # calculating overlapping update direction - percent of number of the same sign elements in the two gradients; validator gets 100% as incentive
+            self.worker_to_direction_percent[widx] = calc_updates_direction(get_local_model_flattened_gradients(latest_block_global_model, worker_model), v_grad)
+            # calculate overlapping mask percent as part of the effort to favor similiar updates and penalize noisy and lazy workers
+            self.worker_to_mask_overlap_percent[widx] = calc_overlapping_mask_percent(latest_block_global_model, self.model, worker_model)     
+            
+        if self._is_malicious and self.attack_type == 1:
+            self_acc_diff = self.worker_to_acc_diff[self.idx]
+            self_euc_dist = self.worker_to_euc_dist[self.idx]
+            self_direction_percent = self.worker_to_direction_percent[self.idx]
+            self_mask_overlap_percent = self.worker_to_mask_overlap_percent[self.idx]
+            # noisy attackers reverse the values
+            self.worker_to_acc_diff = {k: v for k, v in zip(self.worker_to_acc_diff.keys(), reversed(self.worker_to_acc_diff.values()))}
+            self.worker_to_euc_dist = {k: v for k, v in zip(self.worker_to_euc_dist.keys(), reversed(self.worker_to_euc_dist.values()))}
+            self.worker_to_direction_percent = {k: v for k, v in zip(self.worker_to_direction_percent.keys(), reversed(self.worker_to_direction_percent.values()))}
+            self.worker_to_mask_overlap_percent = {k: v for k, v in zip(self.worker_to_euc_dist.keys(), reversed(self.worker_to_mask_overlap_percent.values()))}
+            # and assign itself the legitimate values
+            self.worker_to_acc_diff[self.idx] = self_acc_diff
+            self.worker_to_euc_dist[self.idx] = self_euc_dist
+            self.worker_to_direction_percent[self.idx] = self_direction_percent
+            self.worker_to_mask_overlap_percent[self.idx] = self_mask_overlap_percent
         
-        for widx, wtx in self._verified_worker_txs.items():
-            self.worker_to_gradients[widx] = get_local_model_flattened_gradients(latest_block_global_model, wtx['model'])
-        
-        # calculating overlapping update direction - percent of number of the same sign elements in the two gradients
-        # calculating update distances
-        def calc_updates_direction(w_grad, v_grad):
-            
-            if w_grad.shape != v_grad.shape:
-                raise ValueError("The input arrays must have the same shape.")
-            
-            # Calculate the sign of each element in the arrays
-            sign_w_grad = np.sign(w_grad)
-            sign_v_grad = np.sign(v_grad)
-            
-            """
-            Calculate the percentage of elements with the same sign in two NumPy arrays.
-            """
-            # Compare the signs and count the number of elements with the same sign
-            same_sign_count = np.sum(sign_w_grad == sign_v_grad)
-            
-            # Calculate the percentage of elements with the same sign
-            total_elements = w_grad.size
-            percent_same_sign = (same_sign_count / total_elements) * 100
-            
-            return percent_same_sign
-        
-        def calc_update_distance(w_grad, v_grad):
-            result = np.zeros_like(w_grad)
-            for i in range(len(w_grad)):
-                if np.sign(w_grad[i]) == np.sign(v_grad[i]):
-                    result[i] = np.abs(w_grad[i]) - np.abs(v_grad[i])
-                elif np.sign(w_grad[i]) == 0:
-                    result[i] = - np.abs(v_grad[i])
-                elif np.sign(v_grad[i]) == 0:
-                    result[i] = np.abs(w_grad[i])
-                else:
-                    result[i] = - (np.abs(w_grad[i]) + np.abs(v_grad[i]))
-            return sum(result)
-
-        
-
-
-        self.worker_to_direction_percent = {}
-        self.worker_to_update_distance = {}
-        self.worker_to_cos_sim = {}
-        v_grad = self.worker_to_gradients[self.idx]
-        for widx, w_grad in self.worker_to_gradients.items():
-            # if widx == self.idx:
-            #     continue
-            self.worker_to_direction_percent[widx] = calc_updates_direction(w_grad, v_grad)
-            self.worker_to_update_distance[widx] = calc_update_distance(w_grad, v_grad)
-            self.worker_to_cos_sim[widx] = cosine_similarity(w_grad.reshape(1, -1), v_grad.reshape(1, -1))[0][0]
-
-        if self.args.show_all_validation_performance:
-            print(f"\nShowing validator {self.idx}'s validation performance against malicious workers out of total {len(self.worker_to_acc)} workers:")
-            i = 1
-            for widx, acc_weight in sorted(self.worker_to_acc.items(), key=lambda x: x[1]):
-                if acc_weight == 0:
-                    continue
-                if idx_to_device[widx]._is_malicious:
-                    if i < len(self.worker_to_acc) // 2:
-                        print(f"Malicious worker {widx} has validated accuracy {acc_weight:.3f}, ranked {i}, in the lower half (lower rank means smaller weight).")
-                    else:
-                        print("\033[91m" + f"Malicious worker {widx} has validated accuracy {acc_weight:.2f}, ranked {i}, in the higher half (higher rank means heavier weight)." + "\033[0m")
-                i += 1
-
-        # sometimes may inverse the accuracy weights to account for minority workers
-        if self.args.inverse_acc_weights and random.random() <= 0.05:
-            self.worker_to_acc = {worker_idx: 1 - acc for worker_idx, acc in self.worker_to_acc.items()}
-            print(f"Validator {self.idx} has inversed its accuracy weights.")
 
     def make_validator_tx(self):
          
         validator_tx = {
             'validator_idx' : self.idx,
             'rsa_pub_key': self.return_rsa_pub_key(),
-            'worker_to_acc' : self.worker_to_acc,
-            'worker_to_cos_sim': self.worker_to_cos_sim
+            'worker_to_acc_diff' : self.worker_to_acc_diff,
+            'worker_to_euc_dist' : self.worker_to_euc_dist,
+            'worker_to_direction_percent' : self.worker_to_direction_percent,
+            'worker_to_mask_overlap_percent': self.worker_to_mask_overlap_percent
         }
         validator_tx['tx_sig'] = self.sign_msg(str(validator_tx))
         self._validator_tx = validator_tx
@@ -406,26 +353,12 @@ class Device():
     def broadcast_validator_tx(self, online_validators):
         return
 
-    def calc_ungranted_reward(self, worker_acc, worker_pruned_ratio):
+    def calc_ungranted_reward(self, worker_acc_diff, worker_norm_mask_percent, worker_norm_eu, worker_norm_dir_percent):
         
-        # # using harmonic mean with linear shift emphasize from accuracy to pruned_ratio
-        # using linear shift emphasize from accuracy to pruned_ratio
-        latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
-        curr_chain_length = self.blockchain.get_chain_length()
-
-        est_remaining_prune_rounds = (1 - self.args.target_sparsity - worker_pruned_ratio) / (latest_block_global_model_pruned_ratio / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds for the worker to prune
-        est_remaining_train_rounds = (1 - worker_acc) / (worker_acc / (curr_chain_length + np.nextafter(0, 1))) # this part is used to estimate the number of remaining communication rounds for the worker to train, assuming worker's accuracy increase is averagely incremental
-        est_remaining_rounds = max(est_remaining_prune_rounds, est_remaining_train_rounds)
-        acc_weight = 1 - ( (curr_chain_length + 1) / (curr_chain_length + 1 + est_remaining_rounds) ) # (curr_chain_length + 1) is technically the current communication round, but sometimes no device appended a block in the previous round, so this is more precise
-        acc_weight = max(0, acc_weight)
-
-        pruned_ratio_weight = 1 - acc_weight
-
-        # worker_pruned_ratio needs to be controlled by the difference of the pruned ratio between the worker's model and the global model, so that the worker will not receive pruning reward if it didn't prune, and has no rewards to gain after reaching the target sparsity
-        controlled_worker_pruned_ratio = worker_pruned_ratio - latest_block_global_model_pruned_ratio
-
-        # reward = 1 / (acc_weight / (worker_acc + np.nextafter(0, 1)) + pruned_ratio_weight / controlled_worker_pruned_ratio)
-        reward = (acc_weight * worker_acc + pruned_ratio_weight * controlled_worker_pruned_ratio) # * worker_norm_eu
+        # reward = 1 / (acc_weight / (worker_acc_diff + np.nextafter(0, 1)) + pruned_ratio_weight / controlled_worker_pruned_ratio)
+        # reward = (acc_weight * worker_acc_diff + pruned_ratio_weight * controlled_worker_pruned_ratio) * (1 + worker_norm_dir_percent) * (1 + worker_norm_eu)
+        
+        reward = worker_acc_diff * (1 + worker_norm_mask_percent) * (1 + worker_norm_dir_percent) * (1 + worker_norm_eu) # allow negative reward as panelty
         return reward
         
 
@@ -436,15 +369,44 @@ class Device():
         # aggregate votes and accuracies - normalize by validator_power, defined by the historical stake of the validator + 1 (to avoid float point number and 0 division)
         # for the reward of the validator itself, it is directly adding its own max model accuracy, as an incentive to become a validator
         worker_to_model_weight = defaultdict(float)
-        worker_to_agg_cos_sim = defaultdict(float)
+        worker_to_agg_acc_diff = defaultdict(float)
+        worker_to_agg_euc_dist = defaultdict(float)
+        worker_to_agg_direction_percent = defaultdict(float)
+        worker_to_agg_mask_overlap_percent = defaultdict(float)
 
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in self._verified_validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
-            for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
-                worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
-                
+            for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items(): 
+                worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power # if all validators are honest, the worker_to_euc_dist must be the same, but we don't know if a worker is dishonest, it can send different models to different validators, and validator may dishonestly calculate the distance value
+            for worker_idx, direction_percent in validator_tx['worker_to_direction_percent'].items():
+                worker_to_agg_direction_percent[worker_idx] += direction_percent * validator_power
+            for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
+                # worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
+                # worker_to_model_weight[worker_idx] += worker_acc_diff * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
+                worker_to_agg_acc_diff[worker_idx] += worker_acc_diff * validator_power
+            for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
+                worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
+
+        # assume euclidean distances form a normal distribution
+        # medium is the mean of the distribution, the difference between medium and validator's distance is one standard deviation
+        # we treat distances within two standard deviations as normal, and the rest as outliers
+        validator_euc_dist = worker_to_agg_euc_dist[self.idx]
+        median = np.median(list(worker_to_agg_euc_dist.values()))
+        std = abs(validator_euc_dist - median)
+        for worker_idx, euc_dist in worker_to_agg_euc_dist.items():
+            if euc_dist > median + 2 * std:
+                worker_to_agg_euc_dist[worker_idx] = 0
+
+        worker_to_norm_euc_dist = {worker_idx: agg_euc_dist/sum(worker_to_agg_euc_dist.values()) for worker_idx, agg_euc_dist in worker_to_agg_euc_dist.items()}
+        worker_to_norm_direction_percent = {worker_idx: agg_direction_percent/sum(worker_to_agg_direction_percent.values()) for worker_idx, agg_direction_percent in worker_to_agg_direction_percent.items()}
+        
+        # Calculate the total sum of worker_to_agg_mask_overlap_percent values
+        total = sum(worker_to_agg_mask_overlap_percent.values())
+
+        # Normalize mask overlap percent, avoiding divide by zero error
+        worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent.items()}
+  
         # for validator_idx, validator_tx in self._verified_validator_txs.items():
         #     validator_power = self._pos_book[validator_idx] + 1
         #     for worker_idx, cos_sim in validator_tx['worker_to_cos_sim'].items():
@@ -456,10 +418,9 @@ class Device():
         # worker_to_norm_cos_sim = {worker_idx: agg_cos_sim/sum(worker_to_agg_cos_sim.values()) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
 
         # rewarding mechanism
-        for validator_idx, validator_tx in self._verified_validator_txs.items():
-            for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
-                worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+        # for validator_idx, validator_tx in self._verified_validator_txs.items():
+        for worker_idx in worker_to_agg_acc_diff:
+            self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_to_agg_acc_diff[worker_idx], worker_to_norm_mask_overlap_percent[worker_idx], worker_to_norm_euc_dist[worker_idx], worker_to_norm_direction_percent[worker_idx])
         
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
@@ -467,13 +428,17 @@ class Device():
         # print("V", self.idx, self._device_to_ungranted_reward)
         
         # get models for aggregation
-        worker_to_model = {worker_idx: self._verified_worker_txs[worker_idx]['model'] for worker_idx in worker_to_model_weight}
+        worker_to_model = {worker_idx: self._verified_worker_txs[worker_idx]['model'] for worker_idx in self._device_to_ungranted_reward}
 
         # normalize weights to between 0 and 1
         worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
         self.worker_to_model_weight = worker_to_model_weight
-        
+
+        # new attempt - model weight consistent with reward
+        worker_to_model_weight = {worker_idx: reward/sum(self._device_to_ungranted_reward.values()) for worker_idx, reward in self._device_to_ungranted_reward.items()}
+        self.worker_to_model_weight = worker_to_model_weight
+
         # produce final global model
         self._final_global_model = weighted_fedavg(worker_to_model_weight, worker_to_model, device=self.args.dev_device)
 
@@ -504,7 +469,7 @@ class Device():
         worker_to_prune_weight = {worker_idx: power/sum(worker_to_power.values()) for worker_idx, power in worker_to_power.items()}
 
         need_pruned_ratio = sum([worker_to_pruned_ratio[worker_idx] * weight for worker_idx, weight in worker_to_prune_weight.items()])
-        if self._is_malicious:
+        if self._is_malicious and self.attack_type == 1:
             need_pruned_ratio *= 2
 
         if need_pruned_ratio <= init_pruned_ratio:
@@ -536,7 +501,7 @@ class Device():
         # assign reward to itself by the difference of pruned ratio between last block and this block
         last_block_global_model_pruned_ratio = get_pruned_ratio(last_block.global_model) if last_block else 0
         new_global_model_pruned_ratio = get_pruned_ratio(self._final_global_model)
-        self._device_to_ungranted_reward[self.idx] = self._device_to_ungranted_reward.get(self.idx, 0) + max(0, new_global_model_pruned_ratio - last_block_global_model_pruned_ratio)
+        self._device_to_ungranted_reward[self.idx] += self._device_to_ungranted_reward.get(self.idx, 0) * max(0, new_global_model_pruned_ratio - last_block_global_model_pruned_ratio)
 
         last_block_hash = self.blockchain.get_last_block_hash()
 
@@ -814,15 +779,25 @@ class Device():
         # perform model signature aggregation by the same rule in produce_global_model_and_reward()
         worker_to_model_weight = defaultdict(float)
         device_to_should_reward = defaultdict(float)
-        worker_to_agg_cos_sim = defaultdict(float)
+        worker_to_agg_acc_diff = defaultdict(float)
+        worker_to_agg_euc_dist = defaultdict(float)
+        worker_to_agg_direction_percent = defaultdict(float)
+        worker_to_agg_mask_overlap_percent = defaultdict(float)
 
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in winning_block.validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
-            for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
-                worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                worker_to_model_weight[worker_idx] += worker_acc * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
-        
+            for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items():
+                worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power
+            for worker_idx, direction_percent in validator_tx['worker_to_direction_percent'].items():
+                worker_to_agg_direction_percent[worker_idx] += direction_percent * validator_power
+            for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
+                # worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
+                # worker_to_model_weight[worker_idx] += worker_acc_diff * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
+                worker_to_agg_acc_diff[worker_idx] += worker_acc_diff * validator_power
+            for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
+                worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
+
         # for validator_idx, validator_tx in winning_block.validator_txs.items():
         #     validator_power = self._pos_book[validator_idx] + 1
         #     for worker_idx, cos_sim in validator_tx['worker_to_cos_sim'].items():
@@ -832,13 +807,30 @@ class Device():
 
         # worker_to_norm_cos_sim = {worker_idx: agg_cos_sim/sum(worker_to_agg_cos_sim.values()) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
 
+        validator_euc_dist = worker_to_agg_euc_dist[winning_block.produced_by]
+        medium = np.median(list(worker_to_agg_euc_dist.values()))
+        std = abs(validator_euc_dist - medium)
+        for worker_idx, euc_dist in worker_to_agg_euc_dist.items():
+            if euc_dist > medium + 2 * std:
+                worker_to_agg_euc_dist[worker_idx] = 0
+
+        worker_to_norm_euc_dist = {worker_idx: agg_euc_dist/sum(worker_to_agg_euc_dist.values()) for worker_idx, agg_euc_dist in worker_to_agg_euc_dist.items()}
+        worker_to_norm_direction_percent = {worker_idx: agg_direction_percent/sum(worker_to_agg_direction_percent.values()) for worker_idx, agg_direction_percent in worker_to_agg_direction_percent.items()}
+        
+        total = sum(worker_to_agg_mask_overlap_percent.values())
+
+        # Normalize mask overlap percent, avoiding divide by zero error
+        worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent.items()}
 
         # rewarding mechanism
-        for validator_idx, validator_tx in winning_block.validator_txs.items():
-            for worker_idx, worker_acc in validator_tx['worker_to_acc'].items():
-                worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
-                device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_acc, worker_pruned_ratio)
+        # for validator_idx, validator_tx in winning_block.validator_txs.items():
+            # for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
+            #     # worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
+        for worker_idx in worker_to_agg_acc_diff:
+            device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_to_agg_acc_diff[worker_idx], worker_to_norm_mask_overlap_percent[worker_idx], worker_to_norm_euc_dist[worker_idx], worker_to_norm_direction_percent[worker_idx])
+
         
+        worker_to_model_weight = {worker_idx: reward/sum(device_to_should_reward.values()) for worker_idx, reward in device_to_should_reward.items()}
         # device_to_should_reward = deepcopy(worker_to_model_weight)
         
         # (1) verify if validator honestly assigned reward to devices
@@ -847,7 +839,7 @@ class Device():
 
         last_block_global_model_pruned_ratio = get_pruned_ratio(last_block.global_model) if last_block else 0
         new_global_model_pruned_ratio = get_pruned_ratio(winning_block.global_model)
-        validator_should_self_assigned_reward = max(0, new_global_model_pruned_ratio - last_block_global_model_pruned_ratio)
+        validator_should_self_assigned_reward = device_to_should_reward[winning_block.produced_by] * max(0, new_global_model_pruned_ratio - last_block_global_model_pruned_ratio)
         # device_to_should_reward[winning_block.produced_by] += validator_should_self_assigned_reward
 
         # if device_to_should_reward != winning_block.device_to_reward:
@@ -856,8 +848,10 @@ class Device():
 
         # (2) verify if validator honestly aggregated the models
         # normalize weights to between 0 and 1
-        worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
+        # worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
         # device_to_should_reward = deepcopy(worker_to_model_weight)
+
+
         
         device_to_should_reward[winning_block.produced_by] += validator_should_self_assigned_reward
 
@@ -951,9 +945,9 @@ class Device():
             if model_weight == 0: continue
             if idx_to_device[widx]._is_malicious:
                 if i < len(worker_to_model_weight) // 2:
-                    print(f"Malicious worker {widx} has accuracy-model-weight {model_weight:.3f}, ranked {i}, in the lower half (lower rank means smaller weight).")
+                    print(f"Malicious worker {widx} has model-weight {model_weight:.3f}, ranked {i}, in the lower half (lower rank means smaller weight).")
                 else:
-                    print("\033[91m" + f"Malicious worker {widx} has accuracy-model-weight {model_weight:.2f}, ranked {i}, in the higher half (higher rank means heavier weight)." + "\033[0m")
+                    print("\033[91m" + f"Malicious worker {widx} has model-weight {model_weight:.2f}, ranked {i}, in the higher half (higher rank means heavier weight)." + "\033[0m")
             i += 1
 
 

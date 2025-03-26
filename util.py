@@ -440,7 +440,7 @@ def calc_mask_from_model_with_mask_object(model):
 		for name, mask in module.named_buffers():
 			if 'mask' in name:
 				layer_to_mask[layer] = mask
-	return layer_to_mask
+	return {layer: layer_to_mask[layer] for layer in sorted(layer_to_mask.keys())} # make sure layers are always in order
 
 def calc_mask_from_model_without_mask_object(model):
 	layer_to_mask = {}
@@ -449,7 +449,7 @@ def calc_mask_from_model_without_mask_object(model):
 			if 'weight' in name:
 				layer_to_mask[layer] = np.ones_like(weight_params.cpu())
 				layer_to_mask[layer][weight_params.cpu() == 0] = 0
-	return layer_to_mask
+	return {layer: layer_to_mask[layer] for layer in sorted(layer_to_mask.keys())} # make sure layers are always in order
 
 
 def generate_2d_top_magnitude_mask(model_path, percent, check_whole = False, keep_sign = False):
@@ -555,6 +555,44 @@ def subtract_nested_dicts(dict1, dict2):
 			result[outer_key][inner_key] = dict1.get(outer_key, {}).get(inner_key, 0) - dict2.get(outer_key, {}).get(inner_key, 0)
 	
 	return result
+
+def calc_overlapping_mask_percent(latest_block_global_model, validator_model, worker_model):
+	val_mask = calc_mask_from_model_with_mask_object(validator_model)
+	worker_mask = calc_mask_from_model_with_mask_object(worker_model)
+	if not val_mask or not worker_mask:
+		return 0
+	
+	# flatten the masks
+	val_mask = np.concatenate([layer_mask.flatten() for layer_mask in val_mask.values()])
+	worker_mask = np.concatenate([layer_mask.flatten() for layer_mask in worker_mask.values()])
+
+	global_mask = calc_mask_from_model_without_mask_object(latest_block_global_model)
+	global_mask = np.concatenate([layer_mask.flatten() for layer_mask in global_mask.values()])
+
+	global_mask_positions = set(zip(*np.where(global_mask == 0)))
+	val_mask_positions = set(zip(*np.where(val_mask == 0)))
+	worker_mask_positions = set(zip(*np.where(worker_mask == 0)))
+
+	val_mask_positions = val_mask_positions - global_mask_positions
+	same_positions = val_mask_positions.intersection(worker_mask_positions)
+
+	overlapping_mask_percent = len(same_positions) / global_mask.size
+	return overlapping_mask_percent
+
+def calc_updates_direction(w_grad, v_grad):
+
+	# Calculate the sign of each element in the arrays
+	sign_w_grad = np.sign(w_grad)
+	sign_v_grad = np.sign(v_grad)
+
+	# Compare the signs and count the number of elements with the same sign
+	same_sign_count = np.sum(sign_w_grad == sign_v_grad)
+	
+	# Calculate the percentage of elements with the same sign
+	total_elements = w_grad.size
+	percent_same_sign = (same_sign_count / total_elements) * 100
+	
+	return percent_same_sign
 
 def plot_pos_book(pos_book, log_dir, comm_round, plot_diff=True):
 	'''
