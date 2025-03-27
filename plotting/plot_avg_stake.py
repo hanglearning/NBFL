@@ -9,9 +9,9 @@ log_base_path = '/Users/chenhang/Documents/Working'
 attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack', 4: 'Poison & Lazy Attack'}
 
 # for attack_type in [0, 1, 3, 4]:
-for attack_type in [3]:
+for attack_type in [0, 1, 3, 4]:
     # for mal in [0, 3, 6, 10]:
-    for mal in [6]:
+    for mal in [0, 3, 6, 10]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
         
