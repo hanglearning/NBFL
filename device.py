@@ -353,12 +353,12 @@ class Device():
     def broadcast_validator_tx(self, online_validators):
         return
 
-    def calc_ungranted_reward(self, worker_acc_diff, worker_norm_mask_percent, worker_norm_eu, worker_norm_dir_percent):
+    def calc_ungranted_reward(self, worker_norm_acc_diff, worker_norm_mask_percent, worker_norm_eu, worker_norm_dir_percent):
         
         # reward = 1 / (acc_weight / (worker_acc_diff + np.nextafter(0, 1)) + pruned_ratio_weight / controlled_worker_pruned_ratio)
         # reward = (acc_weight * worker_acc_diff + pruned_ratio_weight * controlled_worker_pruned_ratio) * (1 + worker_norm_dir_percent) * (1 + worker_norm_eu)
         
-        reward = worker_acc_diff * (1 + worker_norm_mask_percent) * (1 + worker_norm_dir_percent) * (1 + worker_norm_eu) # allow negative reward as panelty
+        reward = worker_norm_acc_diff * (1 + worker_norm_mask_percent) * (1 + worker_norm_dir_percent) * (1 + worker_norm_eu) # allow negative reward as panelty
         return reward
         
 
@@ -374,19 +374,28 @@ class Device():
         worker_to_agg_direction_percent = defaultdict(float)
         worker_to_agg_mask_overlap_percent = defaultdict(float)
 
+        worker_to_agg_acc_diff_for_reward = defaultdict(float)
+        worker_to_agg_euc_dist_for_reward = defaultdict(float)
+        worker_to_agg_direction_percent_for_reward = defaultdict(float)
+        worker_to_agg_mask_overlap_percent_for_reward = defaultdict(float)
+
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in self._verified_validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items(): 
                 worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power # if all validators are honest, the worker_to_euc_dist must be the same, but we don't know if a worker is dishonest, it can send different models to different validators, and validator may dishonestly calculate the distance value
+                worker_to_agg_euc_dist_for_reward[worker_idx] += euc_dist
             for worker_idx, direction_percent in validator_tx['worker_to_direction_percent'].items():
                 worker_to_agg_direction_percent[worker_idx] += direction_percent * validator_power
+                worker_to_agg_direction_percent_for_reward[worker_idx] += direction_percent
             for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
                 # worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
                 # worker_to_model_weight[worker_idx] += worker_acc_diff * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
                 worker_to_agg_acc_diff[worker_idx] += worker_acc_diff * validator_power
+                worker_to_agg_acc_diff_for_reward[worker_idx] += worker_acc_diff
             for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
                 worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
+                worker_to_agg_mask_overlap_percent_for_reward[worker_idx] += mask_overlap_percent
 
         # assume euclidean distances form a normal distribution
         # medium is the mean of the distribution, the difference between medium and validator's distance is one standard deviation
@@ -398,14 +407,25 @@ class Device():
             if euc_dist > median + 2 * std:
                 worker_to_agg_euc_dist[worker_idx] = 0
 
-        worker_to_norm_euc_dist = {worker_idx: agg_euc_dist/sum(worker_to_agg_euc_dist.values()) for worker_idx, agg_euc_dist in worker_to_agg_euc_dist.items()}
-        worker_to_norm_direction_percent = {worker_idx: agg_direction_percent/sum(worker_to_agg_direction_percent.values()) for worker_idx, agg_direction_percent in worker_to_agg_direction_percent.items()}
-        
-        # Calculate the total sum of worker_to_agg_mask_overlap_percent values
-        total = sum(worker_to_agg_mask_overlap_percent.values())
+        for worker in worker_to_agg_acc_diff:
+            worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_direction_percent[worker] + worker_to_agg_mask_overlap_percent[worker]
+        # normalize weights to between 0 and 1
+        worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
 
-        # Normalize mask overlap percent, avoiding divide by zero error
-        worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent.items()}
+        # normalize aggregated values for rewarding mechanism
+        total = sum(worker_to_agg_acc_diff_for_reward.values())
+        worker_to_norm_acc_diff = {worker_idx: (agg_acc_diff/ total if total != 0 else 0) for worker_idx, agg_acc_diff in worker_to_agg_acc_diff_for_reward.items()}
+
+        total = sum(worker_to_agg_euc_dist_for_reward.values())
+        worker_to_norm_euc_dist = {worker_idx: (agg_euc_dist / total if total != 0 else 0) for worker_idx, agg_euc_dist in worker_to_agg_euc_dist_for_reward.items()}
+
+        total = sum(worker_to_agg_direction_percent_for_reward.values())
+        worker_to_norm_direction_percent = {worker_idx: (agg_direction_percent / total if total != 0 else 0) for worker_idx, agg_direction_percent in worker_to_agg_direction_percent_for_reward.items()}
+
+        # Calculate the total sum of worker_to_agg_mask_overlap_percent values
+        total = sum(worker_to_agg_mask_overlap_percent_for_reward.values())
+        worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent_for_reward.items()}
+        
   
         # for validator_idx, validator_tx in self._verified_validator_txs.items():
         #     validator_power = self._pos_book[validator_idx] + 1
@@ -420,7 +440,7 @@ class Device():
         # rewarding mechanism
         # for validator_idx, validator_tx in self._verified_validator_txs.items():
         for worker_idx in worker_to_agg_acc_diff:
-            self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_to_agg_acc_diff[worker_idx], worker_to_norm_mask_overlap_percent[worker_idx], worker_to_norm_euc_dist[worker_idx], worker_to_norm_direction_percent[worker_idx])
+            self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_to_norm_acc_diff[worker_idx], worker_to_norm_mask_overlap_percent[worker_idx], worker_to_norm_euc_dist[worker_idx], worker_to_norm_direction_percent[worker_idx])
         
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
 
@@ -431,12 +451,11 @@ class Device():
         worker_to_model = {worker_idx: self._verified_worker_txs[worker_idx]['model'] for worker_idx in self._device_to_ungranted_reward}
 
         # normalize weights to between 0 and 1
-        worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
+        # worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
-        self.worker_to_model_weight = worker_to_model_weight
 
         # new attempt - model weight consistent with reward
-        worker_to_model_weight = {worker_idx: reward/sum(self._device_to_ungranted_reward.values()) for worker_idx, reward in self._device_to_ungranted_reward.items()}
+        # worker_to_model_weight = {worker_idx: reward/sum(self._device_to_ungranted_reward.values()) for worker_idx, reward in self._device_to_ungranted_reward.items()}
         self.worker_to_model_weight = worker_to_model_weight
 
         # produce final global model
@@ -784,19 +803,28 @@ class Device():
         worker_to_agg_direction_percent = defaultdict(float)
         worker_to_agg_mask_overlap_percent = defaultdict(float)
 
+        worker_to_agg_acc_diff_for_reward = defaultdict(float)
+        worker_to_agg_euc_dist_for_reward = defaultdict(float)
+        worker_to_agg_direction_percent_for_reward = defaultdict(float)
+        worker_to_agg_mask_overlap_percent_for_reward = defaultdict(float)
+
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in winning_block.validator_txs.items():
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items():
                 worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power
+                worker_to_agg_euc_dist_for_reward[worker_idx] += euc_dist
             for worker_idx, direction_percent in validator_tx['worker_to_direction_percent'].items():
                 worker_to_agg_direction_percent[worker_idx] += direction_percent * validator_power
+                worker_to_agg_direction_percent_for_reward[worker_idx] += direction_percent
             for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
                 # worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
                 # worker_to_model_weight[worker_idx] += worker_acc_diff * (1 + worker_pruned_ratio - latest_block_global_model_pruned_ratio) * validator_power
                 worker_to_agg_acc_diff[worker_idx] += worker_acc_diff * validator_power
+                worker_to_agg_acc_diff_for_reward[worker_idx] += worker_acc_diff
             for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
                 worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
+                worker_to_agg_mask_overlap_percent_for_reward[worker_idx] += mask_overlap_percent
 
         # for validator_idx, validator_tx in winning_block.validator_txs.items():
         #     validator_power = self._pos_book[validator_idx] + 1
@@ -813,24 +841,35 @@ class Device():
         for worker_idx, euc_dist in worker_to_agg_euc_dist.items():
             if euc_dist > medium + 2 * std:
                 worker_to_agg_euc_dist[worker_idx] = 0
-
-        worker_to_norm_euc_dist = {worker_idx: agg_euc_dist/sum(worker_to_agg_euc_dist.values()) for worker_idx, agg_euc_dist in worker_to_agg_euc_dist.items()}
-        worker_to_norm_direction_percent = {worker_idx: agg_direction_percent/sum(worker_to_agg_direction_percent.values()) for worker_idx, agg_direction_percent in worker_to_agg_direction_percent.items()}
         
-        total = sum(worker_to_agg_mask_overlap_percent.values())
+        for worker in worker_to_agg_acc_diff:
+            worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_direction_percent[worker] + worker_to_agg_mask_overlap_percent[worker]
+        # normalize weights to between 0 and 1
+        worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
 
-        # Normalize mask overlap percent, avoiding divide by zero error
-        worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent.items()}
+        # normalize aggregated values for rewarding mechanism
+        total = sum(worker_to_agg_acc_diff_for_reward.values())
+        worker_to_norm_acc_diff = {worker_idx: (agg_acc_diff/ total if total != 0 else 0) for worker_idx, agg_acc_diff in worker_to_agg_acc_diff_for_reward.items()}
+
+        total = sum(worker_to_agg_euc_dist_for_reward.values())
+        worker_to_norm_euc_dist = {worker_idx: (agg_euc_dist / total if total != 0 else 0) for worker_idx, agg_euc_dist in worker_to_agg_euc_dist_for_reward.items()}
+
+        total = sum(worker_to_agg_direction_percent_for_reward.values())
+        worker_to_norm_direction_percent = {worker_idx: (agg_direction_percent / total if total != 0 else 0) for worker_idx, agg_direction_percent in worker_to_agg_direction_percent_for_reward.items()}
+        
+        # Calculate the total sum of worker_to_agg_mask_overlap_percent values
+        total = sum(worker_to_agg_mask_overlap_percent_for_reward.values())
+        worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent_for_reward.items()}
 
         # rewarding mechanism
         # for validator_idx, validator_tx in winning_block.validator_txs.items():
             # for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
             #     # worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
         for worker_idx in worker_to_agg_acc_diff:
-            device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_to_agg_acc_diff[worker_idx], worker_to_norm_mask_overlap_percent[worker_idx], worker_to_norm_euc_dist[worker_idx], worker_to_norm_direction_percent[worker_idx])
+            device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_to_norm_acc_diff[worker_idx], worker_to_norm_mask_overlap_percent[worker_idx], worker_to_norm_euc_dist[worker_idx], worker_to_norm_direction_percent[worker_idx])
 
         
-        worker_to_model_weight = {worker_idx: reward/sum(device_to_should_reward.values()) for worker_idx, reward in device_to_should_reward.items()}
+       # worker_to_model_weight = {worker_idx: reward/sum(device_to_should_reward.values()) for worker_idx, reward in device_to_should_reward.items()}
         # device_to_should_reward = deepcopy(worker_to_model_weight)
         
         # (1) verify if validator honestly assigned reward to devices
