@@ -314,27 +314,34 @@ class Device():
             # calculate accuracy by validator's local dataset
             self.worker_to_acc_diff[widx] = max(self.eval_model_by_train(worker_model) - g_acc, 0)
             # calculate the euclidean distance between the worker's model and the latest global model
-            self.worker_to_euc_dist[widx] = np.linalg.norm(flatten_model_weights(latest_block_global_model) - flatten_model_weights(worker_model))
+            self.worker_to_euc_dist[widx] = np.linalg.norm(flatten_model_weights(self.model) - flatten_model_weights(worker_model)) # verifiable by other validators
             # calculating overlapping update direction - percent of number of the same sign elements in the two gradients; validator gets 100% as incentive
-            self.worker_to_direction_percent[widx] = calc_updates_direction(get_local_model_flattened_gradients(latest_block_global_model, worker_model), v_grad)
+            self.worker_to_direction_percent[widx] = calc_updates_direction(get_local_model_flattened_gradients(latest_block_global_model, worker_model), v_grad) # verifiable by other validators
             # calculate overlapping mask percent as part of the effort to favor similiar updates and penalize noisy and lazy workers
-            self.worker_to_mask_overlap_percent[widx] = calc_overlapping_mask_percent(latest_block_global_model, self.model, worker_model)     
-            
+            self.worker_to_mask_overlap_percent[widx] = calc_overlapping_mask_percent(latest_block_global_model, self.model, worker_model) # verifiable by other validators
+        
+        # self reported accuracy = sum of other validated workers' accuracies * (self's pos / sum of all pos)
+        self_pos_weight = 0
+        if sum(self._pos_book.values()) != 0:
+            self_pos_weight = self._pos_book[self.idx] / sum(self._pos_book.values()) # allow 0 in the first round
+        self.worker_to_acc_diff[self.idx] = (sum(self.worker_to_acc_diff.values()) - self.worker_to_acc_diff[self.idx])* self_pos_weight
+
         if self._is_malicious and self.attack_type == 1:
             self_acc_diff = self.worker_to_acc_diff[self.idx]
-            self_euc_dist = self.worker_to_euc_dist[self.idx]
-            self_direction_percent = self.worker_to_direction_percent[self.idx]
+            # self_euc_dist = self.worker_to_euc_dist[self.idx]
+            # self_direction_percent = self.worker_to_direction_percent[self.idx]
             self_mask_overlap_percent = self.worker_to_mask_overlap_percent[self.idx]
             # noisy attackers reverse the values
+            del self.worker_to_acc_diff[self.idx] # combined with reverse and reassign, will pass the self-report acc_diff validation
             self.worker_to_acc_diff = {k: v for k, v in zip(self.worker_to_acc_diff.keys(), reversed(self.worker_to_acc_diff.values()))}
             self.worker_to_euc_dist = {k: v for k, v in zip(self.worker_to_euc_dist.keys(), reversed(self.worker_to_euc_dist.values()))}
             self.worker_to_direction_percent = {k: v for k, v in zip(self.worker_to_direction_percent.keys(), reversed(self.worker_to_direction_percent.values()))}
             self.worker_to_mask_overlap_percent = {k: v for k, v in zip(self.worker_to_euc_dist.keys(), reversed(self.worker_to_mask_overlap_percent.values()))}
             # and assign itself the legitimate values
-            self.worker_to_acc_diff[self.idx] = self_acc_diff
-            self.worker_to_euc_dist[self.idx] = self_euc_dist
-            self.worker_to_direction_percent[self.idx] = self_direction_percent
-            self.worker_to_mask_overlap_percent[self.idx] = self_mask_overlap_percent
+            self.worker_to_euc_dist[self.idx] = 0 # cannot cheat, fixed value
+            self.worker_to_direction_percent[self.idx] = 1 # cannot cheat, fixed value, also the largest
+            self.worker_to_mask_overlap_percent[self.idx] = self_mask_overlap_percent # cannot cheat, equal to its mask percent, also the largest
+            self.worker_to_acc_diff[self.idx] = self_acc_diff # hard to cheat - need to report high accuracies for other workers as well
         
 
     def make_validator_tx(self):
@@ -380,7 +387,16 @@ class Device():
         worker_to_agg_mask_overlap_percent_for_reward = defaultdict(float)
 
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
+        invalid_validator_tx_idx = set()
         for validator_idx, validator_tx in self._verified_validator_txs.items():
+            # verify validator's self reported accuracy
+            validator_pos_weight = 0
+            if sum(self._pos_book.values()) != 0:
+                validator_pos_weight = self._pos_book[validator_idx] / sum(self._pos_book.values())
+            if round(validator_tx['worker_to_acc_diff'][validator_idx], 10) != round((sum(validator_tx['worker_to_acc_diff'].values()) - validator_tx['worker_to_acc_diff'][validator_idx]) * validator_pos_weight, 10):
+                print(f"Validator {validator_idx}'s self reported accuracy is invalid or forking occured that caused PoS book inconsistent.")
+                invalid_validator_tx_idx.add(validator_idx)
+                continue
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items(): 
                 worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power # if all validators are honest, the worker_to_euc_dist must be the same, but we don't know if a worker is dishonest, it can send different models to different validators, and validator may dishonestly calculate the distance value
@@ -396,6 +412,10 @@ class Device():
             for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
                 worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
                 worker_to_agg_mask_overlap_percent_for_reward[worker_idx] += mask_overlap_percent
+
+        # remove invalid validator tx
+        for validator_idx in invalid_validator_tx_idx:
+            del self._verified_validator_txs[validator_idx]
 
         # assume euclidean distances form a normal distribution
         # medium is the mean of the distribution, the difference between medium and validator's distance is one standard deviation
@@ -790,7 +810,7 @@ class Device():
                 return False
             self.resync_chain(comm_round, idx_to_device, skip_check_peers = True)
             self.post_resync(idx_to_device)
-        
+
 
         ''' validate model signature to make sure the validator is performing model aggregation honestly '''
         layer_to_model_sig_row, layer_to_model_sig_col = sum_over_model_params(winning_block.global_model)
@@ -810,6 +830,13 @@ class Device():
 
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         for validator_idx, validator_tx in winning_block.validator_txs.items():
+            # verify validator's self reported accuracy
+            validator_pos_weight = 0
+            if sum(self._pos_book.values()) != 0:
+                validator_pos_weight = self._pos_book[validator_idx] / sum(self._pos_book.values())
+            if round(validator_tx['worker_to_acc_diff'][validator_idx], 10) != round((sum(validator_tx['worker_to_acc_diff'].values()) - validator_tx['worker_to_acc_diff'][validator_idx]) * validator_pos_weight, 10):
+                print(f"Validator {validator_idx}'s self reported accuracy is invalid in the winning block or forking occured that caused PoS book inconsistent. Block discarded.")
+                return False
             validator_power = self._pos_book[validator_idx] + 1
             for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items():
                 worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power
@@ -825,6 +852,8 @@ class Device():
             for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
                 worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
                 worker_to_agg_mask_overlap_percent_for_reward[worker_idx] += mask_overlap_percent
+
+            
 
         # for validator_idx, validator_tx in winning_block.validator_txs.items():
         #     validator_power = self._pos_book[validator_idx] + 1

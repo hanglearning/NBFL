@@ -590,7 +590,7 @@ def calc_updates_direction(w_grad, v_grad):
 	
 	# Calculate the percentage of elements with the same sign
 	total_elements = w_grad.size
-	percent_same_sign = (same_sign_count / total_elements) * 100
+	percent_same_sign = same_sign_count / total_elements
 	
 	return percent_same_sign
 
