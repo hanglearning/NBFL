@@ -56,7 +56,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "10", "--seed", "50", "--epochs", "50", "--rewind", "0", "--attack_type", "1", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "10", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "4", "--n_samples", "40", "--n_classes", "3", "--rate_unbalance", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8"]
         },
         {
             "name": "LotteryFL debug run",

@@ -42,7 +42,7 @@ for attack_type in [0, 1, 3, 4]:
         for i, ml in enumerate(mean_lines):
             if i + 1 + mal > 20:
                 color = 'red'
-                if attack_type == 4 and (i + 1) % 2 == 0:
+                if attack_type == 3 or (attack_type == 4 and (i + 1) % 2 == 0):
                     color = 'magenta'
             plt.plot(range(1, len(ml) + 1), ml, color = color)
             plt.annotate(f'{i + 1}', xy=(len(ml), ml[-1]), xytext=(5, 0), textcoords='offset points', color=color, fontsize=8)
@@ -51,7 +51,14 @@ for attack_type in [0, 1, 3, 4]:
         red_line = mlines.Line2D([], [], color='red', label="poison attack")
         magenta_line = mlines.Line2D([], [], color='magenta', label="laziness attack")
 
-        plt.legend(handles=[green_line, red_line, magenta_line], loc='best', prop={'size': 8})
+        if attack_type == 0:
+            plt.legend(handles=[green_line], loc='best', prop={'size': 8})
+        elif attack_type == 1:
+            plt.legend(handles=[green_line, red_line], loc='best', prop={'size': 8})
+        elif attack_type == 3:
+            plt.legend(handles=[green_line, magenta_line], loc='best', prop={'size': 8})
+        elif attack_type == 4:
+            plt.legend(handles=[green_line, red_line, magenta_line], loc='best', prop={'size': 8})
 
         plt.xlabel('Communication Round', fontsize=10)
         plt.ylabel('Stake', fontsize=10)
