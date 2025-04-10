@@ -225,8 +225,8 @@ class Device():
         print(f"Device {self.idx} poisoned the whole neural network with variance {self.args.noise_variance}.") # or should say, unpruned weights?
 
     def generate_model_sig(self):
-        model = deepcopy(self.model)
-        make_prune_permanent(model)
+        # model = make_prune_permanent(deepcopy(self.model))
+        model = self.model
         # zero knowledge proof of model ownership
         self.layer_to_model_sig_row, self.layer_to_model_sig_col = sum_over_model_params(model)
         
@@ -282,7 +282,8 @@ class Device():
 
         # validate model siganture
         for widx, wtx in self._verified_worker_txs.items():
-            worker_model = make_prune_permanent(deepcopy(wtx['model']))
+            # worker_model = make_prune_permanent(deepcopy(wtx['model']))
+            worker_model = wtx['model']
             worker_model_sig_row_sig = wtx['model_sig_row_sig']
             worker_model_sig_col_sig = wtx['model_sig_col_sig']
             worker_rsa = wtx['rsa_pub_key']
@@ -312,11 +313,11 @@ class Device():
         for widx, wtx in self._verified_worker_txs.items():
             worker_model = wtx['model']
             # calculate accuracy by validator's local dataset
-            self.worker_to_acc_diff[widx] = max(self.eval_model_by_train(worker_model) - g_acc, 0)
+            self.worker_to_acc_diff[widx] = max(self.eval_model_by_train(worker_model) - g_acc, 0) # eval_model_by_train() evaluates on the *ticket* model, not the unpruned model
             # calculate the euclidean distance between the worker's model and the latest global model
-            self.worker_to_euc_dist[widx] = np.linalg.norm(flatten_model_weights(self.model) - flatten_model_weights(worker_model)) # verifiable by other validators
+            self.worker_to_euc_dist[widx] = np.linalg.norm(flatten_model_weights(self.model) - flatten_model_weights(worker_model)) # verifiable by other validators # flatten_model_weights() flattens the *unpruned model's model weights
             # calculating overlapping update direction - percent of number of the same sign elements in the two gradients; validator gets 100% as incentive
-            self.worker_to_direction_percent[widx] = calc_updates_direction(get_local_model_flattened_gradients(latest_block_global_model, worker_model), v_grad) # verifiable by other validators
+            self.worker_to_direction_percent[widx] = calc_updates_direction(get_local_model_flattened_gradients(latest_block_global_model, worker_model), v_grad) # verifiable by other validators # get_local_model_flattened_gradients() flattens the *unpruned model's model weights
             # calculate overlapping mask percent as part of the effort to favor similiar updates and penalize noisy and lazy workers
             self.worker_to_mask_overlap_percent[widx] = calc_overlapping_mask_percent(latest_block_global_model, self.model, worker_model) # verifiable by other validators
         
@@ -608,7 +609,7 @@ class Device():
             - True if the chain needs to be resynced, False otherwise
         """
         if comm_round == 1:
-            # validator not applicable to resync chain
+            # initial round not applicable to resync chain
             return False
 
         if skip_check_peers:

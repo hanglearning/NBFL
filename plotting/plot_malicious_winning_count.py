@@ -4,18 +4,19 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 log_base_path = '/Users/chenhang/Documents/Working'
-attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack'}
+attack_type_map = {0: 'No Attack', 1: 'Poison', 2: 'Label Flipping', 3: 'Lazy', 4: 'Poison & Lazy'}
 
 y_offset = 0
 y_axis_labels = []
 
-for attack_type in [0, 1, 3]:
+# for attack_type in [0, 1, 3, 4]:
+for attack_type in [0, 1, 4]:
     for mal in [0, 3, 6, 10]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
         
         # across different seeds
-        LBFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder]
+        LBFL_log_paths = sorted([f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder], reverse=True)
 
         for lp in LBFL_log_paths:
             # Open and load the pickle file
@@ -25,11 +26,11 @@ for attack_type in [0, 1, 3]:
                     if malicious_winning_count:
                         plt.scatter(comm_round, y_offset, marker='o', color='red')
                         plt.text(comm_round, y_offset, str(malicious_winning_count), ha='center', va='center', color='black')
-            y_axis_labels.append(f'{mal} Attackers - {attack_type_map[attack_type]}')
+            y_axis_labels.append(f'{mal} Atckers - {attack_type_map[attack_type]}, sd: {lp.split('_')[lp.split('_').index('seed') + 1]}')
             y_offset += 1
 
 legend_handles = [
-    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label='Count of devices that appended a malicious block')
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label='Count of devices appended a malicious block')
 ]
 
 plt.legend(handles=legend_handles, loc='best', prop={'size': 10})

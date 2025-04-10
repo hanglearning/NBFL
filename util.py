@@ -392,7 +392,7 @@ def generate_mask_from_0_weights(model):
 		mask_amount = torch.eq(weights.data, 0.00).sum().item()
 		prune.l1_unstructured(param, name, amount=mask_amount)
 		
-def make_prune_permanent(model):
+def make_prune_permanent(model): # in place and also return the model
 	if check_mask_object_from_model(model):
 		params_pruned = get_prune_params(model, name='weight')
 		for param, name in params_pruned:
