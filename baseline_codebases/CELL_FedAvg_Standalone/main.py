@@ -41,7 +41,7 @@ if __name__ == "__main__":
     parser.add_argument('--arch', type=str, default='cnn', help='cnn|mlp')
     parser.add_argument('--dataset_mode', type=str,
                         default='non-iid', help='non-iid|iid')
-    parser.add_argument('--rate_unbalance', type=float, default=0.5)
+    parser.add_argument('--alpha', type=float, default=0.5)
     parser.add_argument('--n_clients', type=int, default=20)
     parser.add_argument('--rounds', type=int, default=25)
     parser.add_argument('--prune_threshold', type=float, default=0.9) # 1 - sparsity
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--n_samples', type=int, default=40)
+    parser.add_argument('--total_samples', type=int, default=40)
     parser.add_argument('--n_classes', type=int, default=3)
     parser.add_argument('--eita', type=float, default=0.5,
                         help="accuracy threshold")
@@ -117,12 +117,12 @@ if __name__ == "__main__":
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_clients,
                                               dataset_name=args.dataset,
                                               n_classes=args.n_classes,
-                                              n_samples=args.n_samples,
+                                              total_samples=args.total_samples,
                                               log_dirpath=args.log_dir,
                                               seed=args.seed,
                                               mode=args.dataset_mode,
                                               batch_size=args.batch_size,
-                                              rate_unbalance=args.rate_unbalance,
+                                              alpha=args.alpha,
                                               dataloader_workers=args.num_workers)
             
     # read init_global_model from file, which was generated from the LBFL run to ensure consistency

@@ -51,11 +51,11 @@ if __name__ == '__main__':
     #     data_dir = '/home/leaf/data/femnist/data/' # put your leaf project path here
     #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_femnist(data_dir)
     # elif args.dataset == 'cifar10_extr_noniid':
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_cifar10_extr_noniid(args.n_clients, args.nclass, args.n_samples, args.rate_unbalance)
+    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_cifar10_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
     # elif args.dataset == 'miniimagenet_extr_noniid':
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_miniimagenet_extr_noniid(args.n_clients, args.nclass, args.n_samples, args.rate_unbalance)
+    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_miniimagenet_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
     # elif args.dataset == 'mnist_extr_noniid':
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_mnist_extr_noniid(args.n_clients, args.nclass, args.n_samples, args.rate_unbalance)
+    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_mnist_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
     # elif args.dataset == 'HAR':
     #     data_dir = '../data/UCI HAR Dataset'
     #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_HAR(data_dir, args.num_samples)
@@ -156,12 +156,12 @@ if __name__ == '__main__':
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_clients,
                                               dataset_name=args.dataset,
                                               n_classes=args.n_classes,
-                                              n_samples=args.n_samples,
+                                              total_samples=args.total_samples,
                                               log_dirpath=args.log_dir,
                                               seed=args.seed,
                                               mode=args.dataset_mode,
                                               batch_size=args.batch_size,
-                                              rate_unbalance=args.rate_unbalance,
+                                              alpha=args.alpha,
                                               dataloader_workers=args.num_workers)
 
 
