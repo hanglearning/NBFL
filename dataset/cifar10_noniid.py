@@ -2,7 +2,7 @@ import numpy as np
 from torchvision import datasets, transforms
 
 
-def get_dataset_cifar10_extr_noniid(n_devices, n_classes, n_samples, rate_unbalance, log_dirpath):
+def get_dataset_cifar10_extr_noniid(n_devices, n_classes, total_samples, alpha, log_dirpath):
     data_dir = './data'
     apply_transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -15,11 +15,11 @@ def get_dataset_cifar10_extr_noniid(n_devices, n_classes, n_samples, rate_unbala
 
     # Chose equal splits for every user
     user_groups_train, user_groups_test, user_groups_labels = cifar_extr_noniid(
-        train_dataset, test_dataset, n_devices, n_classes, n_samples, rate_unbalance, log_dirpath)
+        train_dataset, test_dataset, n_devices, n_classes, total_samples, alpha, log_dirpath)
     return train_dataset, test_dataset, user_groups_train, user_groups_test, user_groups_labels
 
 
-def cifar_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_samples, rate_unbalance, log_dirpath):
+def cifar_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_samples, alpha, log_dirpath):
     num_shards_train, num_imgs_train = int(50000/num_samples), num_samples
     n_classes = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
@@ -63,8 +63,8 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_devices, n_classes, num_sam
         label_to_qty = {}
         for l_iter, l in enumerate(user_labels):
             all_indices = idxs_train_splits[l] # get all indices of samples with label l
-            to_use_rate_unbalance = 1 if l_iter == 0 else rate_unbalance
-            sampled_indices = np.random.choice(len(all_indices), int(num_imgs_train * to_use_rate_unbalance), replace=False)
+            to_use_alpha = 1 if l_iter == 0 else alpha
+            sampled_indices = np.random.choice(len(all_indices), int(num_imgs_train * to_use_alpha), replace=False)
             sampled_elements = np.array(all_indices)[sampled_indices]
             idxs_train_splits[l] = np.delete(idxs_train_splits[l], sampled_indices)
             dict_users_train[i] = np.concatenate(

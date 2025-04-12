@@ -187,7 +187,7 @@ def cifar_noniid(dataset, n_clients):
     return dict_users
 
 
-def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, rate_unbalance):
+def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, alpha):
     num_shards_train, num_imgs_train = int(50000/num_samples), num_samples
     n_classes = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
@@ -229,8 +229,8 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
                 user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:(rand+1)*num_imgs_train]), axis=0)
             else:
                 dict_users_train[i] = np.concatenate(
-                    (dict_users_train[i], idxs[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
-                user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
+                    (dict_users_train[i], idxs[rand*num_imgs_train:int((rand+alpha)*num_imgs_train)]), axis=0)
+                user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:int((rand+alpha)*num_imgs_train)]), axis=0)
             unbalance_flag = 1
         user_labels_set = set(user_labels)
         #print(user_labels_set)
@@ -241,7 +241,7 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
 
     return dict_users_train, dict_users_test
 
-def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, rate_unbalance):
+def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, alpha):
     num_shards_train, num_imgs_train = int(60000/num_samples), num_samples
     n_classes = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
@@ -282,8 +282,8 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
                 user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:(rand+1)*num_imgs_train]), axis=0)
             else:
                 dict_users_train[i] = np.concatenate(
-                    (dict_users_train[i], idxs[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
-                user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
+                    (dict_users_train[i], idxs[rand*num_imgs_train:int((rand+alpha)*num_imgs_train)]), axis=0)
+                user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:int((rand+alpha)*num_imgs_train)]), axis=0)
             unbalance_flag = 1
         user_labels_set = set(user_labels)
         #print(user_labels_set)
@@ -294,7 +294,7 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
     return dict_users_train, dict_users_test
 
 
-def miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, rate_unbalance):
+def miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, alpha):
     num_shards_train, num_imgs_train = int(50000/num_samples), num_samples
     n_classes = 100
     num_imgs_perc_test, num_imgs_test_total = 100, 10000
@@ -336,8 +336,8 @@ def miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, 
                 user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:(rand+1)*num_imgs_train]), axis=0)
             else:
                 dict_users_train[i] = np.concatenate(
-                    (dict_users_train[i], idxs[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
-                user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:int((rand+rate_unbalance)*num_imgs_train)]), axis=0)
+                    (dict_users_train[i], idxs[rand*num_imgs_train:int((rand+alpha)*num_imgs_train)]), axis=0)
+                user_labels = np.concatenate((user_labels, labels[rand*num_imgs_train:int((rand+alpha)*num_imgs_train)]), axis=0)
             unbalance_flag = 1
         user_labels_set = set(user_labels)
         #print(user_labels_set)

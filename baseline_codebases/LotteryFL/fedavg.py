@@ -34,11 +34,11 @@ if __name__ == '__main__':
         data_dir = '/home/js905/code/leaf/data/femnist/data/'
         train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_femnist(data_dir)
     elif args.dataset == 'cifar10_extr_noniid':
-        train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_cifar10_extr_noniid(args.n_clients, args.nclass, args.n_samples, args.rate_unbalance)
+        train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_cifar10_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
     elif args.dataset == 'miniimagenet_extr_noniid':
-        train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_miniimagenet_extr_noniid(args.n_clients, args.nclass, args.n_samples, args.rate_unbalance)
+        train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_miniimagenet_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
     elif args.dataset == 'mnist_extr_noniid':
-        train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_mnist_extr_noniid(args.n_clients, args.nclass, args.n_samples, args.rate_unbalance)
+        train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_mnist_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
     elif args.dataset == 'HAR':
         data_dir = '../data/UCI HAR Dataset'
         train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_HAR(data_dir, args.num_samples)
