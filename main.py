@@ -401,8 +401,5 @@ def main():
         with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
             pickle.dump(logger, f)
 
-        # generate heatmap for the pos book
-        plot_pos_book(logger["pos_book"], args.log_dir, comm_round, plot_diff=True)
-
 if __name__ == "__main__":
     main()
