@@ -4,13 +4,13 @@ import torch.nn.functional as F
 
 
 class MLP(nn.Module):
-    def __init__(self, n_classes=10):
+    def __init__(self, n_labels=10):
         super(MLP, self).__init__()
         self.linear1 = nn.Linear(32*32*3, 1024)
         self.linear2 = nn.Linear(1024, 512)
         self.linear3 = nn.Linear(512, 64)
         self.linear4 = nn.Linear(64, 64)
-        self.linear5 = nn.Linear(64, n_classes)
+        self.linear5 = nn.Linear(64, n_labels)
 
     def forward(self, x):
         out = x.view(x.size(0), -1)

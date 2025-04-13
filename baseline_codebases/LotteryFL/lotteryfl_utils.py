@@ -34,7 +34,7 @@ def get_dataset_HAD(data_dir, num_samples):
     dataset_test = HADDataset(data_x_test, data_y_test)
     return dataset_train, dataset_test, user_group_train, user_group_test
 
-def get_dataset_cifar10_extr_noniid(n_clients, n_classes, total_samples, alpha):
+def get_dataset_cifar10_extr_noniid(n_clients, n_labels, total_samples, alpha):
     data_dir = '../data/cifar/'
     apply_transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -46,10 +46,10 @@ def get_dataset_cifar10_extr_noniid(n_clients, n_classes, total_samples, alpha):
                                       transform=apply_transform)
 
     # Chose euqal splits for every user
-    user_groups_train, user_groups_test = cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, total_samples, alpha)
+    user_groups_train, user_groups_test = cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, total_samples, alpha)
     return train_dataset, test_dataset, user_groups_train, user_groups_test
 
-def get_dataset_mnist_extr_noniid(n_clients, n_classes, total_samples, alpha):
+def get_dataset_mnist_extr_noniid(n_clients, n_labels, total_samples, alpha):
     data_dir = '../data/mnist/'
     apply_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -61,10 +61,10 @@ def get_dataset_mnist_extr_noniid(n_clients, n_classes, total_samples, alpha):
                                       transform=apply_transform)
 
     # Chose euqal splits for every user
-    user_groups_train, user_groups_test = mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, total_samples, alpha)
+    user_groups_train, user_groups_test = mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, total_samples, alpha)
     return train_dataset, test_dataset, user_groups_train, user_groups_test
 
-def get_dataset_miniimagenet_extr_noniid(n_clients, n_classes, total_samples, alpha):
+def get_dataset_miniimagenet_extr_noniid(n_clients, n_labels, total_samples, alpha):
     data_dir = '../dataset/mini-imagenet/'
     apply_transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -76,7 +76,7 @@ def get_dataset_miniimagenet_extr_noniid(n_clients, n_classes, total_samples, al
                                       transform=apply_transform)
 
     # Chose euqal splits for every user
-    user_groups_train, user_groups_test = miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, total_samples, alpha)
+    user_groups_train, user_groups_test = miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, total_samples, alpha)
     return train_dataset, test_dataset, user_groups_train, user_groups_test
 
 def get_dataset(args):

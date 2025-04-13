@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 # from dataset.mnist_noniid import get_dataset_mnist_extr_noniid, mnist_extr_noniid
 
 
-def DataLoaders(n_devices, dataset_name, n_classes, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1):
+def DataLoaders(n_devices, dataset_name, n_labels, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1):
     if mode == "non-iid":
         if dataset_name == "mnist":
             return get_data_noniid_mnist(n_devices,
@@ -57,8 +57,19 @@ def iid_split(n_clients,
               train_data,
               batch_size, test_data, dataloader_workers, log_dirpath, total_samples):
 
-    all_train_idx = np.random.permutation(train_data.data.shape[0])
-    sample_train_idx = [all_train_idx[i * total_samples:(i + 1) * total_samples] for i in range(n_clients)]
+    labels = np.array(train_data.targets)
+    samples_per_label = total_samples // 10  # assume 10 labels
+    
+    idx_by_label = {l: np.where(labels == l)[0] for l in range(10)}
+    for l in idx_by_label:
+        np.random.shuffle(idx_by_label[l])
+    
+    sample_train_idx = [[] for _ in range(n_clients)]
+    for i in range(n_clients):
+        for l in range(10):
+            take = idx_by_label[l][:samples_per_label]
+            sample_train_idx[i].extend(take)
+            idx_by_label[l] = idx_by_label[l][samples_per_label:]
 
     all_test_idx = np.arange(test_data.data.shape[0])
 
@@ -94,7 +105,7 @@ def iid_split(n_clients,
     return user_train_loaders, user_test_loaders, user_labels, global_test_loader
 
 
-def get_data_noniid_cifar10(n_devices, n_classes, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1):
+def get_data_noniid_cifar10(n_devices, n_labels, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1):
     data_dir = './data'
     apply_transform = transforms.Compose([
         transforms.ToTensor(),
@@ -116,11 +127,11 @@ def get_data_noniid_cifar10(n_devices, n_classes, total_samples, log_dirpath, se
     user_labels = [[] for _ in range(n_devices)]
 
     for device_id in range(n_devices):
-        chosen_labels = np.random.choice(K, size=n_classes, replace=False)
+        chosen_labels = np.random.choice(K, size=n_labels, replace=False)
         user_labels[device_id] = list(chosen_labels)
 
         for label in chosen_labels:
-            take = min(total_samples // n_classes, len(idx_by_class[label]))
+            take = min(total_samples // n_labels, len(idx_by_class[label]))
             selected = idx_by_class[label][:take]
             idx_by_class[label] = idx_by_class[label][take:]
             idx_batch[device_id].extend(selected)
