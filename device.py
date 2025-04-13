@@ -62,6 +62,7 @@ class Device():
         self.model = copy_model(init_global_model, args.dev_device)
         self.max_model_acc = 0
         self._worker_pruned_ratio = 0
+        self._historical_max_acc = 0 # used to update adaptive pruning threshold
         # for validators
         self._validator_tx = None
         self._verified_worker_txs = {} # signature verified
@@ -155,10 +156,15 @@ class Device():
         logger['local_max_acc'][comm_round][self.idx] = self.max_model_acc
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
+        if self.max_model_acc > self._historical_max_acc:
+            self._historical_max_acc = self.max_model_acc
+
     def worker_prune(self, comm_round, logger):
 
-        if self.attack_type != 1 and self.max_model_acc < self.args.prune_acc_trigger:
-            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.prune_acc_trigger}. Skip pruning.")
+        prune_acc_trigger = 0.9 * self._historical_max_acc
+
+        if self.attack_type != 1 and self.max_model_acc < prune_acc_trigger:
+            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {prune_acc_trigger}. Skip pruning.")
             return
 
         # model prune percentage
@@ -225,8 +231,8 @@ class Device():
         print(f"Device {self.idx} poisoned the whole neural network with variance {self.args.noise_variance}.") # or should say, unpruned weights?
 
     def generate_model_sig(self):
-        # model = make_prune_permanent(deepcopy(self.model))
-        model = self.model
+        model = make_prune_permanent(deepcopy(self.model))
+        # model = self.model
         # zero knowledge proof of model ownership
         self.layer_to_model_sig_row, self.layer_to_model_sig_col = sum_over_model_params(model)
         
@@ -282,8 +288,8 @@ class Device():
 
         # validate model siganture
         for widx, wtx in self._verified_worker_txs.items():
-            # worker_model = make_prune_permanent(deepcopy(wtx['model']))
-            worker_model = wtx['model']
+            worker_model = make_prune_permanent(deepcopy(wtx['model']))
+            # worker_model = wtx['model']
             worker_model_sig_row_sig = wtx['model_sig_row_sig']
             worker_model_sig_col_sig = wtx['model_sig_col_sig']
             worker_rsa = wtx['rsa_pub_key']
@@ -934,6 +940,15 @@ class Device():
         for worker_idx, model_weight in worker_to_model_weight.items():
             model_sig_row = winning_block.worker_to_model_sig[worker_idx]['model_sig_row']
             model_sig_col = winning_block.worker_to_model_sig[worker_idx]['model_sig_col']
+            worker_model_sig_row_sig = winning_block.worker_to_model_sig[worker_idx]['model_sig_row_sig']
+            worker_model_sig_col_sig = winning_block.worker_to_model_sig[worker_idx]['model_sig_col_sig']
+            worker_rsa = winning_block.worker_to_model_sig[worker_idx]['worker_rsa']
+            if not self.verify_msg(model_sig_row, worker_model_sig_row_sig, worker_rsa['pub_key'], worker_rsa['modulus']):
+                print(f"{self.role} {self.idx}'s picked winning block has invalid worker model signature row. Block discarded.")
+                return False
+            if not self.verify_msg(model_sig_col, worker_model_sig_col_sig, worker_rsa['pub_key'], worker_rsa['modulus']):
+                print(f"{self.role} {self.idx}'s picked winning block has invalid worker model signature column. Block discarded.")
+                return False
             for layer in model_sig_row:
                 if layer not in workers_layer_to_model_sig_row:
                     workers_layer_to_model_sig_row[layer] = model_sig_row[layer] * model_weight

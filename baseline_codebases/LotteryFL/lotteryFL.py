@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_clients,
                                               dataset_name=args.dataset,
-                                              n_classes=args.n_classes,
+                                              n_labels=args.n_labels,
                                               total_samples=args.total_samples,
                                               log_dirpath=args.log_dir,
                                               seed=args.seed,

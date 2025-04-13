@@ -187,13 +187,13 @@ def cifar_noniid(dataset, n_clients):
     return dict_users
 
 
-def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, alpha):
+def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, num_samples, alpha):
     num_shards_train, num_imgs_train = int(50000/num_samples), num_samples
-    n_classes = 10
+    n_labels = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
-    assert(n_classes * n_clients <= num_shards_train)
-    assert(n_classes <= n_classes)
-    idx_class = [i for i in range(n_classes)]
+    assert(n_labels * n_clients <= num_shards_train)
+    assert(n_labels <= n_labels)
+    idx_class = [i for i in range(n_labels)]
     idx_shard = [i for i in range(num_shards_train)]
     dict_users_train = {i: np.array([]) for i in range(n_clients)}
     dict_users_test = {i: np.array([]) for i in range(n_clients)} 
@@ -219,7 +219,7 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
     # divide and assign
     for i in range(n_clients):
         user_labels = np.array([])
-        rand_set = set(np.random.choice(idx_shard, n_classes, replace=False))
+        rand_set = set(np.random.choice(idx_shard, n_labels, replace=False))
         idx_shard = list(set(idx_shard) - rand_set)
         unbalance_flag = 0
         for rand in rand_set:
@@ -241,13 +241,13 @@ def cifar_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
 
     return dict_users_train, dict_users_test
 
-def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, alpha):
+def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, num_samples, alpha):
     num_shards_train, num_imgs_train = int(60000/num_samples), num_samples
-    n_classes = 10
+    n_labels = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
-    assert(n_classes * n_clients <= num_shards_train)
-    assert(n_classes <= n_classes)
-    idx_class = [i for i in range(n_classes)]
+    assert(n_labels * n_clients <= num_shards_train)
+    assert(n_labels <= n_labels)
+    idx_class = [i for i in range(n_labels)]
     idx_shard = [i for i in range(num_shards_train)]
     dict_users_train = {i: np.array([]) for i in range(n_clients)}
     dict_users_test = {i: np.array([]) for i in range(n_clients)}
@@ -272,7 +272,7 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
     # divide and assign
     for i in range(n_clients):
         user_labels = np.array([])
-        rand_set = set(np.random.choice(idx_shard, n_classes, replace=False))
+        rand_set = set(np.random.choice(idx_shard, n_labels, replace=False))
         idx_shard = list(set(idx_shard) - rand_set)
         unbalance_flag = 0
         for rand in rand_set:
@@ -294,13 +294,13 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_sam
     return dict_users_train, dict_users_test
 
 
-def miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, num_samples, alpha):
+def miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, num_samples, alpha):
     num_shards_train, num_imgs_train = int(50000/num_samples), num_samples
-    n_classes = 100
+    n_labels = 100
     num_imgs_perc_test, num_imgs_test_total = 100, 10000
-    assert(n_classes * n_clients <= num_shards_train)
-    assert(n_classes <= n_classes)
-    idx_class = [i for i in range(n_classes)]
+    assert(n_labels * n_clients <= num_shards_train)
+    assert(n_labels <= n_labels)
+    idx_class = [i for i in range(n_labels)]
     idx_shard = [i for i in range(num_shards_train)]
     dict_users_train = {i: np.array([]) for i in range(n_clients)}
     dict_users_test = {i: np.array([]) for i in range(n_clients)}
@@ -326,7 +326,7 @@ def miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_classes, 
     # divide and assign
     for i in range(n_clients):
         user_labels = np.array([])
-        rand_set = set(np.random.choice(idx_shard, n_classes, replace=False))
+        rand_set = set(np.random.choice(idx_shard, n_labels, replace=False))
         idx_shard = list(set(idx_shard) - rand_set)
         unbalance_flag = 0
         for rand in rand_set:

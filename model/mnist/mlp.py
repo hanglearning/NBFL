@@ -4,14 +4,14 @@ import torch.nn.functional as F
 
 
 class MLP(nn.Module):
-    def __init__(self, n_classes=10):
+    def __init__(self, n_labels=10):
         super(MLP, self).__init__()
         self.classifier = nn.Sequential(
             nn.Linear(28*28, 100),
             nn.ReLU(inplace=True),
             nn.Linear(100, 100),
             nn.ReLU(inplace=True),
-            nn.Linear(100, n_classes),
+            nn.Linear(100, n_labels),
         )
 
     def forward(self, x):

@@ -70,7 +70,7 @@ parser.add_argument('--epochs', type=int, default=50, help="local max training e
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--optimizer', type=str, default="Adam", help="SGD|Adam")
 parser.add_argument('--total_samples', type=int, default=40)
-parser.add_argument('--n_classes', type=int, default=4)
+parser.add_argument('--n_labels', type=int, default=4)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
 parser.add_argument('--noise_variance', type=float, default=0.05, help="noise variance level of the injected Gaussian Noise")
@@ -138,7 +138,7 @@ def main():
     print(f"Using device {args.dev_device}")
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LBFL_seed_{args.seed}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_nclasses_{args.n_classes}_rounds_{args.rounds}_val_{args.n_validators}_mal_{args.n_malicious}_attack_{args.attack_type}_noise_{args.noise_variance}_rewind_{args.rewind}"
+    log_root_name = f"LBFL_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_nlabels_{args.n_labels}_rounds_{args.rounds}_val_{args.n_validators}_mal_{args.n_malicious}_attack_{args.attack_type}_noise_{args.noise_variance}_rewind_{args.rewind}"
 
     ######## initiate global model ########
     init_global_model = create_init_model(cls=models[args.dataset]
@@ -162,7 +162,7 @@ def main():
     
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_devices,
     dataset_name=args.dataset,
-    n_classes=args.n_classes,
+    n_labels=args.n_labels,
     total_samples=args.total_samples,
     log_dirpath=args.log_dir,
     seed=args.seed,
