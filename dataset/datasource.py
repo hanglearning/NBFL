@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 # from dataset.mnist_noniid import get_dataset_mnist_extr_noniid, mnist_extr_noniid
 
 
-def DataLoaders(n_devices, dataset_name, n_labels, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1):
+def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1):
     if mode == "non-iid":
         if dataset_name == "mnist":
             return get_data_noniid_mnist(n_devices,
