@@ -41,7 +41,7 @@ if __name__ == "__main__":
     parser.add_argument('--arch', type=str, default='cnn', help='cnn|mlp')
     parser.add_argument('--dataset_mode', type=str,
                         default='non-iid', help='non-iid|iid')
-    parser.add_argument('--alpha', type=float, default=0.5)
+    parser.add_argument('--alpha_dirichlet', type=float, default=0.5)
     parser.add_argument('--n_clients', type=int, default=20)
     parser.add_argument('--rounds', type=int, default=25)
     parser.add_argument('--prune_threshold', type=float, default=0.9) # 1 - sparsity
@@ -119,7 +119,7 @@ if __name__ == "__main__":
                                               seed=args.seed,
                                               mode=args.dataset_mode,
                                               batch_size=args.batch_size,
-                                              alpha=args.alpha,
+                                              alpha=args.alpha_dirichlet,
                                               dataloader_workers=args.num_workers)
             
     # read init_global_model from file, which was generated from the LBFL run to ensure consistency
