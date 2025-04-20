@@ -154,7 +154,6 @@ if __name__ == '__main__':
 
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_clients,
                                               dataset_name=args.dataset,
-                                              n_labels=args.n_labels,
                                               total_samples=args.total_samples,
                                               log_dirpath=args.log_dir,
                                               seed=args.seed,
@@ -200,8 +199,8 @@ if __name__ == '__main__':
                                         validloader=test_loaders[idx], testloader=global_test_loader)
             
             # Hang - for malicious user with label flipping attack
-            if idx >= args.n_clients - args.n_malicious and args.attack_type == 2 and epoch == 0:
-                local_model.trainloader.dataset.targets = 9 - local_model.trainloader.dataset.targets  
+            # if idx >= args.n_clients - args.n_malicious and args.attack_type == 2 and epoch == 0:
+            #     local_model.trainloader.dataset.targets = 9 - local_model.trainloader.dataset.targets  
                 
             #test global model before train
             train_model = copy.deepcopy(global_model)

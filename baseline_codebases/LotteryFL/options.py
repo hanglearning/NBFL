@@ -15,7 +15,7 @@ def args_parser():
                         help="number of users: K")
     parser.add_argument('--frac', type=float, default=1,
                         help='the fraction of clients: C')
-    parser.add_argument('--local_ep', type=int, default=50,
+    parser.add_argument('--local_ep', type=int, default=100,
                         help="the number of local epochs: E")
     parser.add_argument('--batch_size', type=int, default=10,
                         help="local batch size: B")
@@ -23,12 +23,10 @@ def args_parser():
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0.5,
                         help='SGD momentum (default: 0.5)')
-    parser.add_argument('--n_labels', type=int, default=3, help="number \
-                        of classes")
-    parser.add_argument('--total_samples', type=int, default=40,
+    parser.add_argument('--total_samples', type=int, default=200,
                         help="number of images per class per client have")
     parser.add_argument('--alpha', type=float, default=0.5,
-                        help="unbalance rate")
+                        help="for Dirichlet distribution")
 
 
     # model arguments
@@ -58,11 +56,6 @@ def args_parser():
                         help='pruning end rate')
     parser.add_argument('--mask_ratio', type=float, default=0.5,
                         help='mask ratio')
-
-    # sampling arguments
-    parser.add_argument('--num_samples', type=int, default=100,
-                        help='number of samples for HAR')
-
     # other arguments
     # parser.add_argument('--dataset', type=str, default='mnist_extr_noniid', help="name \
     #                     of dataset")
@@ -86,7 +79,7 @@ def args_parser():
 
     # malicious
     parser.add_argument('--n_malicious', type=int, default=0, help='number of malicious users')
-    parser.add_argument('--attack_type', type=int, default=0, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack')
+    # parser.add_argument('--attack_type', type=int, default=4, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack')
 
 
     parser.add_argument('--log_dir', type=str, default="./logs")
