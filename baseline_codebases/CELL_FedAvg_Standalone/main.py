@@ -49,11 +49,10 @@ if __name__ == "__main__":
     parser.add_argument('--server_prune_step', type=float, default=0.2)
     parser.add_argument('--server_prune_freq', type=int, default=10)
     parser.add_argument('--frac_clients_per_round', type=float, default=1.0)
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--total_samples', type=int, default=40)
-    parser.add_argument('--n_labels', type=int, default=3)
+    parser.add_argument('--total_samples', type=int, default=200)
     parser.add_argument('--eita', type=float, default=0.5,
                         help="accuracy threshold")
     parser.add_argument('--alpha', type=float, default=0.5,
@@ -115,7 +114,6 @@ if __name__ == "__main__":
 
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_clients,
                                               dataset_name=args.dataset,
-                                              n_labels=args.n_labels,
                                               total_samples=args.total_samples,
                                               log_dirpath=args.log_dir,
                                               seed=args.seed,

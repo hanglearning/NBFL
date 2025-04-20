@@ -150,8 +150,11 @@ class Client():
         last_pruned_model = copy_model(self.model, self.args.dev_device)
 
         while True:
-            to_prune_amount += random.uniform(0, self.args.max_prune_step)
-            to_prune_amount = min(to_prune_amount, intended_prune_amount, 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
+            if self._is_malicious and self.attack_type == 1:
+                to_prune_amount = 1 - self.args.target_sparsity # noise attacker tries to maximize the overlapping mask reward
+            else:
+                to_prune_amount += random.uniform(0, self.args.max_prune_step)
+                to_prune_amount = min(to_prune_amount, intended_prune_amount, 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
             pruned_model = copy_model(self.model, self.args.dev_device)
             make_prune_permanent(pruned_model)
             l1_prune(model=pruned_model,
