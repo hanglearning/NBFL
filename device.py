@@ -35,6 +35,7 @@ class Device():
         user_labels,
         global_test_loader,
         init_global_model,
+        noise_variance
     ):
         self.args = args
         
@@ -62,7 +63,7 @@ class Device():
         self.model = copy_model(init_global_model, args.dev_device)
         self.max_model_acc = 0
         self._worker_pruned_ratio = 0
-        self._historical_max_acc = 0 # used to update adaptive pruning threshold
+        self.noise_variance = noise_variance
         # for validators
         self._validator_tx = None
         self._verified_worker_txs = {} # signature verified
@@ -156,22 +157,17 @@ class Device():
         logger['local_max_acc'][comm_round][self.idx] = self.max_model_acc
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
-        if self.max_model_acc > self._historical_max_acc:
-            self._historical_max_acc = self.max_model_acc
-
     def worker_prune(self, comm_round, logger):
-
-        prune_acc_trigger = 0.9 * self._historical_max_acc
-
-        if self.attack_type != 1 and self.max_model_acc < prune_acc_trigger:
-            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {prune_acc_trigger}. Skip pruning.")
-            return
 
         # model prune percentage
         init_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
         if self.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
             print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
             return
+        
+        intended_prune_amount = self.max_model_acc
+        if intended_prune_amount < get_pruned_ratio(self.model):
+            intended_prune_amount = get_pruned_ratio(self.model)
         
         print()
         L_or_M = "M" if self._is_malicious else "L"
@@ -185,7 +181,11 @@ class Device():
         last_pruned_model = copy_model(self.model, self.args.dev_device)
 
         while True:
-            to_prune_amount += random.uniform(0, self.args.max_prune_step)
+            if self._is_malicious and self.attack_type == 1:
+                to_prune_amount = 1 - self.args.target_sparsity # noise attacker tries to maximize the overlapping mask reward
+            else:
+                to_prune_amount += random.uniform(0, self.args.max_prune_step)
+                to_prune_amount = min(to_prune_amount, intended_prune_amount, 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
             pruned_model = copy_model(self.model, self.args.dev_device)
             make_prune_permanent(pruned_model)
             l1_prune(model=pruned_model,
@@ -194,14 +194,20 @@ class Device():
                         verbose=self.args.prune_verbose)
             
             model_acc = self.eval_model_by_train(pruned_model)
-
+            
             # prune until the accuracy drop exceeds the threshold or below the target sparsity
-            if init_model_acc - model_acc > self.args.acc_drop_threshold or 1 - to_prune_amount <= self.args.target_sparsity:
+            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
-                self.model = copy_model(last_pruned_model, self.args.dev_device)
+                self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
                 break
-            
+
+            if to_prune_amount == intended_prune_amount or 1 - to_prune_amount <= self.args.target_sparsity:
+                # reached intended prune amount, stop
+                self.model = copy_model(pruned_model, self.args.dev_device)
+                self.max_model_acc = model_acc
+                break
+
             accs.append(model_acc)
             last_pruned_model = copy_model(pruned_model, self.args.dev_device)
 
@@ -226,9 +232,9 @@ class Device():
             for name, weight_params in module.named_parameters():
                 if "weight" in name:
                     # noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * torch.from_numpy(layer_to_mask[layer]).to(self.args.dev_device)
-                    noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * layer_to_mask[layer].to(self.args.dev_device)
+                    noise = self.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * layer_to_mask[layer].to(self.args.dev_device)
                     weight_params.data.add_(noise.to(self.args.dev_device))  # Modify weights in place
-        print(f"Device {self.idx} poisoned the whole neural network with variance {self.args.noise_variance}.") # or should say, unpruned weights?
+        print(f"Device {self.idx} poisoned the whole neural network with variance {self.noise_variance}.") # or should say, unpruned weights?
 
     def generate_model_sig(self):
         model = make_prune_permanent(deepcopy(self.model))
@@ -433,6 +439,7 @@ class Device():
         for worker_idx, euc_dist in worker_to_agg_euc_dist.items():
             if euc_dist > median + 2 * std:
                 worker_to_agg_euc_dist[worker_idx] = 0
+                worker_to_agg_euc_dist_for_reward[worker_idx] = 0
 
         for worker in worker_to_agg_acc_diff:
             worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_direction_percent[worker] + worker_to_agg_mask_overlap_percent[worker]
@@ -877,6 +884,7 @@ class Device():
         for worker_idx, euc_dist in worker_to_agg_euc_dist.items():
             if euc_dist > medium + 2 * std:
                 worker_to_agg_euc_dist[worker_idx] = 0
+                worker_to_agg_euc_dist_for_reward[worker_idx] = 0
         
         for worker in worker_to_agg_acc_diff:
             worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_direction_percent[worker] + worker_to_agg_mask_overlap_percent[worker]

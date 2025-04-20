@@ -137,16 +137,16 @@ if __name__ == '__main__':
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    def poison_model(model):
+    def poison_model(model, noise_variance):
         # produce_mask_from_model_in_place(model)
         layer_to_mask = calc_mask_from_model_without_mask_object(model) # introduce noise to unpruned weights
         for layer, module in model.named_children():
             for name, weight_params in module.named_parameters():
                 if "weight" in name:
                     # noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * torch.from_numpy(layer_to_mask[layer]).to(self.args.dev_device)
-                    noise = args.noise_variance * torch.randn(weight_params.size()) * layer_to_mask[layer]
+                    noise = noise_variance * torch.randn(weight_params.size()) * layer_to_mask[layer]
                     weight_params.data.add_(noise.to(device))
-        print(f"User {idx} poisoned the whole neural network with variance 3.") # or should say, unpruned weights?
+        print(f"User {idx} poisoned the whole neural network with variance {noise_variance}.") # or should say, unpruned weights?
         
     set_seed(args.seed)
     print(f"Seed set: {args.seed}")

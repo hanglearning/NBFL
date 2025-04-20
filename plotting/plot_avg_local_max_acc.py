@@ -8,8 +8,10 @@ logger_concerning = 'local_max_acc'
 y_axis_label = 'Accuracy'
 
 # draw for all devices
-for attack_type in [0, 1, 3]:
-    for mal in [0, 3, 6, 10]:
+# for attack_type in [0, 1, 3]:
+#     for mal in [0, 3, 6, 10]:
+for attack_type in [4]:
+    for mal in [3, 6, 10]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
         if attack_type == 0:
@@ -54,7 +56,7 @@ for attack_type in [0, 1, 3]:
         plt.legend(loc='best')
         plt.xlabel('Communication Round')
         plt.ylabel(y_axis_label)
-        attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack'}
+        attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack', 4: 'Poison & Lazy'}
         plt.title(f'{" ".join(logger_concerning.split('_')).title()} - {mal} Attackers - {attack_type_map[attack_type]}')
 
         plt.savefig(f'{log_base_path}/LBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}.png', dpi=300)
@@ -62,7 +64,9 @@ for attack_type in [0, 1, 3]:
         plt.clf()
 
 # draw for legitimate devices
-for attack_type in [0, 1, 3]:
+# for attack_type in [0, 1, 3]:
+#     for mal in [3, 6, 10]:
+for attack_type in [4]:
     for mal in [3, 6, 10]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
@@ -109,7 +113,7 @@ for attack_type in [0, 1, 3]:
         plt.legend(loc='best')
         plt.xlabel('Communication Round')
         plt.ylabel(y_axis_label)
-        attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack'}
+        attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack', 4: 'Poison & Lazy'}
         plt.title(f'LEGITIMATE {" ".join(logger_concerning.split('_')).title()} - {mal} Attackers - {attack_type_map[attack_type]}')
 
         plt.savefig(f'{log_base_path}/LBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_legitimate.png', dpi=300)

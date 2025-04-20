@@ -47,7 +47,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "8", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "4", "--total_samples", "40", "--n_labels", "3", "--alpha", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "0.05"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "8", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "4", "--total_samples", "40", "--n_labels", "3", "--alpha", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8"]
         },
         {
             "name": "debug",
@@ -56,7 +56,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "0", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "0", "--total_samples", "200", "--alpha", "0.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--dataset_mode", "iid"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "3", "--attack_type", "4", "--seed", "40", "--epochs", "100", "--rewind", "0", "--total_samples", "200", "--alpha", "1.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--dataset_mode", "non-iid"]
         },
         {
             "name": "LotteryFL debug run",

@@ -73,8 +73,6 @@ parser.add_argument('--total_samples', type=int, default=40)
 parser.add_argument('--n_labels', type=int, default=4)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
-parser.add_argument('--noise_variance', type=float, default=0.05, help="noise variance level of the injected Gaussian Noise")
-
 ####################### validation and rewards setting #######################
 parser.add_argument('--pass_all_models', type=int, default=0, help='turn off validation and pass all models, used for debug or create baselines')
 parser.add_argument('--validate_center_threshold', type=float, default=0.1, help='only recognize malicious devices if the difference of two centers of KMeans exceed this threshold')
@@ -138,7 +136,7 @@ def main():
     print(f"Using device {args.dev_device}")
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LBFL_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_nlabels_{args.n_labels}_rounds_{args.rounds}_val_{args.n_validators}_mal_{args.n_malicious}_attack_{args.attack_type}_noise_{args.noise_variance}_rewind_{args.rewind}"
+    log_root_name = f"LBFL_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_nlabels_{args.n_labels}_rounds_{args.rounds}_val_{args.n_validators}_mal_{args.n_malicious}_attack_{args.attack_type}_rewind_{args.rewind}"
 
     ######## initiate global model ########
     init_global_model = create_init_model(cls=models[args.dataset]
@@ -173,19 +171,34 @@ def main():
     
     idx_to_device = {}
     n_malicious = args.n_malicious
+
+    if args.n_malicious == 3:
+        noise_variances = [0.05]
+    elif args.n_malicious == 6:
+        noise_variances = [0.05, 0.5, 1.0]
+    elif args.n_malicious == 10:
+        noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
+
+    noise_attacker_idx = 0
     for i in range(1, args.n_devices + 1):
         is_malicious = True if args.n_devices - i < n_malicious else False
         attack_type = 0
+        noise_variance = 0
         if is_malicious and args.attack_type == 4:
             if i % 2 == 1:
                 attack_type = 1 # odd number assign model poisoning attack - why not random? Because we need to keep it consistent across runs so comparison can reflect the effect of the attack
+                noise_variance = noise_variances[noise_attacker_idx]
+                noise_attacker_idx += 1
             elif i % 2 == 0:
                 attack_type = 3
         elif is_malicious:
             attack_type = args.attack_type
-        device = Device(i, is_malicious, attack_type, args, train_loaders[i - 1], test_loaders[i - 1], user_labels[i - 1], global_test_loader, init_global_model)
+        device = Device(i, is_malicious, attack_type, args, train_loaders[i - 1], test_loaders[i - 1], user_labels[i - 1], global_test_loader, init_global_model, noise_variance)
         if is_malicious:
-            print(f"Assigned device {i} malicious with attack type {attack_type}.")
+            if attack_type == 1:
+                print(f"Assigned device {i} malicious as noise attacker with noise variance: {noise_variance}.")
+            elif attack_type == 3:
+                print(f"Assigned device {i} malicious as lazy attacker.")
             # label flipping attack
             if args.attack_type == 2:
                 device._train_loader.dataset.targets = 9 - device._train_loader.dataset.targets
