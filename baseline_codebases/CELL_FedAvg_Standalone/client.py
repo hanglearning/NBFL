@@ -13,7 +13,7 @@ from baseline_utils import train as util_train
 from baseline_utils import test as util_test
 
 import random
-
+from util import *
 
 class Client():
     def __init__(
@@ -21,6 +21,7 @@ class Client():
         idx,
         args,
         is_malicious,
+        noise_variance,
         init_global_model,
         train_loader=None,
         test_loader=None,
@@ -51,15 +52,26 @@ class Client():
         self.model = copy_model(init_global_model, args.dev_device)
         self.global_model = copy_model(init_global_model, args.dev_device)
         self.init_global_model = copy_model(init_global_model, args.dev_device)
+
+        self.noise_variance = noise_variance
     
     def model_learning_max(self, comm_round, logger):
 
-        logger['global_test_acc'][comm_round][self.idx] = self.eval_model_by_global_test(self.model)
+        produce_mask_from_model_in_place(self.model)
 
-        print(f"\n---------- Worker:{self.idx} starts training ---------------------")
+        logger['global_test_acc'][comm_round][self.idx] = self.eval_model_by_global_test(self.model)
+        logger['global_model_sparsity'][comm_round][self.idx] = 1 - get_pruned_ratio(self.model)
+
+        print()
+        L_or_M = "M" if self._is_malicious else "L"
+        attack_type = 'Legitimate'
+        if L_or_M == 'M':
+            if self.attack_type == 1:
+                attack_type = 'Poison Attack'
+            if self.attack_type == 3:
+                attack_type = 'Lazy'
         
-        # generate mask object in-place
-        produce_mask_from_model(self.model)
+        print(f"\n---------- {L_or_M} {attack_type} Worker:{self.idx} {self._user_labels} Train to Max Acc Update ---------------------")
 
         if comm_round > 1 and self.args.rewind:
         # reinitialize model with init_params
@@ -73,95 +85,109 @@ class Client():
         if self._is_malicious and self.args.attack_type == 3:
             max_epoch = int(max_epoch * 0.1)
 
-        epoch = 0
-        max_model_epoch = epoch
-
         # init max_acc as the initial global model acc on local training set
         max_acc = self.eval_model_by_train(self.model)
-        max_model = self.model
 
-        while epoch < max_epoch and max_acc != 1.0:
-            if self.args.train_verbose:
-                print(f"Worker={self.idx}, epoch={epoch + 1}")
+        if self._is_malicious and self.attack_type == 1:
+            # skip training and poison local model on trainable weights before submission
+            self.poison_model(self.model)
+            poinsoned_acc = self.eval_model_by_train(self.model)
+            print(f'Poisoned accuracy: {poinsoned_acc}, decreased {max_acc - poinsoned_acc}.')
+            self.max_model_acc = poinsoned_acc
+        else:
+            max_model = copy_model(self.model, self.args.dev_device)
+            max_model_epoch = epoch = 0
+            # train to max accuracy
+            while epoch < max_epoch and max_acc != 1.0:
+                if self.args.train_verbose:
+                    print(f"Worker={self.idx}, epoch={epoch + 1}")
 
-            util_train(self.model,
-                        self._train_loader,
-                        self.args.lr,
-                        self.args.dev_device,
-                        self.args.train_verbose)
-            acc = self.eval_model_by_train(self.model)
-            # print(epoch + 1, acc)
-            if acc > max_acc:
-                # print(self.idx, "epoch", epoch + 1, acc)
-                max_model = copy_model(self.model, self.args.dev_device)
-                max_acc = acc
-                max_model_epoch = epoch + 1
+                util_train(self.model,
+                            self._train_loader,
+                            self.args.optimizer,
+                            self.args.lr,
+                            self.args.dev_device,
+                            self.args.train_verbose)
+                acc = self.eval_model_by_train(self.model)
+                if acc > max_acc:
+                    max_model = copy_model(self.model, self.args.dev_device)
+                    max_acc = acc
+                    max_model_epoch = epoch + 1
 
-            epoch += 1
+                epoch += 1
 
-        print(f"Worker {self.idx} trained for {epoch} epochs with max training acc {max_acc} arrived at epoch {max_model_epoch}.")
-        logger['local_max_epoch'][comm_round][self.idx] = max_model_epoch
 
-        self.model = max_model
-        self.max_model_acc = max_acc
+            print(f"Worker {self.idx} with max training acc {max_acc} arrived at epoch {max_model_epoch}.")
+            logger['local_max_epoch'][comm_round][self.idx] = max_model_epoch
 
-        # self.save_model_weights_to_log(comm_round, max_model_epoch)
-        logger['global_model_sparsity'][comm_round][self.idx] = 1 - get_pruned_amount(self.model)
+            self.model = max_model
+            self.max_model_acc = max_acc
+
         logger['local_max_acc'][comm_round][self.idx] = self.max_model_acc
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
     def worker_prune(self, comm_round, logger):
 
-        if not self._is_malicious and self.max_model_acc < self.args.prune_acc_trigger:
-            print(f"Worker {self.idx}'s local model max accuracy is < the prune acc trigger {self.args.prune_acc_trigger}. Skip pruning.")
-            return
-
         # model prune percentage
-        init_pruned_amount = get_prune_summary(model=self.model, name='weight')['global'] # pruned_amount = 0s/total_params = 1 - sparsity
-        if not self._is_malicious and 1 - init_pruned_amount <= self.args.target_sparsity:
-            print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_amount}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
+        init_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
+        if self.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
+            print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
             return
-
-        print(f"\n---------- Worker:{self.idx} starts pruning ---------------------")
+        
+        intended_prune_amount = self.max_model_acc
+        if intended_prune_amount < get_pruned_ratio(self.model):
+            intended_prune_amount = get_pruned_ratio(self.model)
+        
+        print()
+        L_or_M = "M" if self._is_malicious else "L"
+        print(f"\n---------- {L_or_M} Worker:{self.idx} starts pruning ---------------------")
 
         init_model_acc = self.eval_model_by_train(self.model)
         accs = [init_model_acc]
         # models = deque([copy_model(self.model, self.args.dev_device)]) - used if want the model with the best accuracy arrived at an intermediate pruned amount
-        # print("Initial pruned model accuracy", init_model_acc)
 
-        to_prune_amount = init_pruned_amount
+        to_prune_amount = init_pruned_ratio
         last_pruned_model = copy_model(self.model, self.args.dev_device)
 
         while True:
             to_prune_amount += random.uniform(0, self.args.max_prune_step)
+            to_prune_amount = min(to_prune_amount, intended_prune_amount, 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
             pruned_model = copy_model(self.model, self.args.dev_device)
+            make_prune_permanent(pruned_model)
             l1_prune(model=pruned_model,
                         amount=to_prune_amount,
                         name='weight',
                         verbose=self.args.prune_verbose)
             
             model_acc = self.eval_model_by_train(pruned_model)
-
+            
             # prune until the accuracy drop exceeds the threshold or below the target sparsity
-            if init_model_acc - model_acc > self.args.acc_drop_threshold or 1 - to_prune_amount <= self.args.target_sparsity:
+            if init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
-                # print("pruned amount", to_prune_amount, "target_sparsity", self.args.target_sparsity)
-                # print(f"init_model_acc - model_acc: {init_model_acc- model_acc} > self.args.acc_drop_threshold: {self.args.acc_drop_threshold}")
-                self.model = copy_model(last_pruned_model, self.args.dev_device)
+                self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
                 break
-            
+
+            if to_prune_amount == intended_prune_amount or 1 - to_prune_amount <= self.args.target_sparsity:
+                # reached intended prune amount, stop
+                self.model = copy_model(pruned_model, self.args.dev_device)
+                self.max_model_acc = model_acc
+                break
+
             accs.append(model_acc)
             last_pruned_model = copy_model(pruned_model, self.args.dev_device)
 
-        after_pruned_amount = get_pruned_amount(self.model) # to_prune_amount = 0s/total_params = 1 - sparsity
+        after_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
         after_pruning_acc = self.eval_model_by_train(self.model)
 
-        print(f"Model sparsity: {1 - after_pruned_amount:.2f}")
-        print(f"Pruned model before and after accuracy: {init_model_acc:.2f}, {after_pruning_acc:.2f}")
-        print(f"Pruned amount: {after_pruned_amount - init_pruned_amount:.2f}")
+        self._worker_pruned_ratio = after_pruned_ratio
 
-        logger['after_prune_sparsity'][comm_round][self.idx] = 1 - after_pruned_amount
+        print(f"Model sparsity: {1 - after_pruned_ratio:.2f}")
+        print(f"Pruned model before and after accuracy: {init_model_acc:.2f}, {after_pruning_acc:.2f}")
+        print(f"Pruned amount: {after_pruned_ratio - init_pruned_ratio:.2f}")
+
+        logger['pruned_amount'][comm_round][self.idx] = after_pruned_ratio - init_pruned_ratio
+        logger['after_prune_sparsity'][comm_round][self.idx] = 1 - after_pruned_ratio
         logger['after_prune_acc'][comm_round][self.idx] = after_pruning_acc
         logger['after_prune_local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
         logger['after_prune_global_test_acc'][comm_round][self.idx] = self.eval_model_by_global_test(self.model)
@@ -355,9 +381,10 @@ class Client():
         for layer, module in model.named_children():
             for name, weight_params in module.named_parameters():
                 if "weight" in name:
-                    noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * layer_to_mask[layer].to(self.args.dev_device)
-                    weight_params.data.add_(noise.to(self.args.dev_device))  # Use .data to avoid the in-place operation error
-        print(f"Client {self.idx} poisoned the whole network with variance {self.args.noise_variance}.") # or should say, unpruned weights?
+                    # noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * torch.from_numpy(layer_to_mask[layer]).to(self.args.dev_device)
+                    noise = self.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * layer_to_mask[layer].to(self.args.dev_device)
+                    weight_params.data.add_(noise.to(self.args.dev_device))  # Modify weights in place
+        print(f"Client {self.idx} poisoned the whole network with variance {self.noise_variance}.") # or should say, unpruned weights?
 
     def eval_model_by_local_test(self, model):
         """

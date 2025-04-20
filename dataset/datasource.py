@@ -97,7 +97,7 @@ def iid_split(n_clients,
         unique_labels = sorted(list(set(labels)))
         user_labels.append(unique_labels)
         class_counts = np.bincount(np.array(labels), minlength=10)
-        msg = f"Device {i} label distribution: {dict(enumerate(class_counts))}"
+        msg = f"Device {i + 1} label distribution: {dict(enumerate(class_counts))}"
         with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
             f.write(f"{msg}\n")
         print(msg)
@@ -145,7 +145,7 @@ def get_data_noniid_cifar10(n_devices, n_labels, total_samples, log_dirpath, see
         labels_arr = np.array(train_data.targets)[idx]
         # Added code block to log label distribution
         class_counts = np.bincount(labels_arr, minlength=10)
-        msg = f"Device {i} label distribution: {dict(enumerate(class_counts))}"
+        msg = f"Device {i + 1} label distribution: {dict(enumerate(class_counts))}"
         with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
             f.write(f"{msg}\n")
         print(msg)
@@ -238,7 +238,7 @@ def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_siz
 
         labels_arr = np.array(train_data.targets)[idx]
         class_counts = np.bincount(labels_arr, minlength=10)
-        msg = f"Device {i} label distribution: {dict(enumerate(class_counts))}"
+        msg = f"Device {i + 1} label distribution: {dict(enumerate(class_counts))}"
         with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
             f.write(f"{msg}\n")
         print(msg)

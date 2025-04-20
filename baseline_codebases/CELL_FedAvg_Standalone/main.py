@@ -69,7 +69,6 @@ if __name__ == "__main__":
     parser.add_argument('--rewind', type=int, default=0, help="reinit ticket model parameters before training")
 
     parser.add_argument('--n_malicious', type=int, default=0)
-    parser.add_argument('--noise_variance', type=int, default=1, help="noise variance level of the injected Gaussian Noise")
 
     parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
     parser.add_argument('--target_sparsity', type=float, default=0.1, help='target sparsity for pruning, stop pruning if below this threshold')
@@ -143,11 +142,34 @@ if __name__ == "__main__":
 
     clients = []
     n_malicious = args.n_malicious
+
+    if args.n_malicious == 3:
+        noise_variances = [0.05]
+    elif args.n_malicious == 6:
+        noise_variances = [0.05, 0.5, 1.0]
+    elif args.n_malicious == 10:
+        noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
+
+    noise_attacker_idx = 0
     for i in range(args.n_clients):
-        malicious = True if args.n_clients - i <= n_malicious else False
-        client = Client(i + 1, args, malicious, init_global_model, train_loaders[i], test_loaders[i], user_labels[i], global_test_loader)
-        if malicious:
-            print(f"Assigned client {i + 1} malicious.")
+        is_malicious = True if args.n_clients - i <= n_malicious else False
+        attack_type = 0
+        noise_variance = 0
+        if is_malicious and args.attack_type == 4:
+            if i % 2 == 1:
+                attack_type = 1 # odd number assign model poisoning attack - why not random? Because we need to keep it consistent across runs so comparison can reflect the effect of the attack
+                noise_variance = noise_variances[noise_attacker_idx]
+                noise_attacker_idx += 1
+            elif i % 2 == 0:
+                attack_type = 3
+        elif is_malicious:
+            attack_type = args.attack_type
+        client = Client(i + 1, args, is_malicious, init_global_model, noise_variance, train_loaders[i], test_loaders[i], user_labels[i], global_test_loader)
+        if is_malicious:
+            if attack_type == 1:
+                print(f"Assigned client {i} malicious as noise attacker with noise variance: {noise_variance}.")
+            elif attack_type == 3:
+                print(f"Assigned client {i} malicious as lazy attacker.")
             # label flipping attack
             if args.attack_type == 2:
                 client._train_loader.dataset.targets = 9 - client._train_loader.dataset.targets
