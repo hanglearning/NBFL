@@ -70,7 +70,6 @@ parser.add_argument('--epochs', type=int, default=50, help="local max training e
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--optimizer', type=str, default="Adam", help="SGD|Adam")
 parser.add_argument('--total_samples', type=int, default=40)
-parser.add_argument('--n_labels', type=int, default=4)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
 ####################### validation and rewards setting #######################
@@ -160,7 +159,6 @@ def main():
     
     train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(n_devices=args.n_devices,
     dataset_name=args.dataset,
-    n_labels=args.n_labels,
     total_samples=args.total_samples,
     log_dirpath=args.log_dir,
     seed=args.seed,

@@ -41,7 +41,7 @@ if __name__ == '__main__':
     device = 'cuda' if args.gpu else 'cpu'
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LotteryFL_seed_{args.seed}_{exe_date_time}_nmalicious_{args.n_malicious}_attack_{args.attack_type}"
+    log_root_name = f"LotteryFL_seed_{args.seed}_{exe_date_time}_nmalicious_{args.n_malicious}"
     args.log_dir = f"{args.log_dir}/{log_root_name}"
     os.makedirs(args.log_dir)
 
@@ -143,8 +143,7 @@ if __name__ == '__main__':
         for layer, module in model.named_children():
             for name, weight_params in module.named_parameters():
                 if "weight" in name:
-                    # noise = self.args.noise_variance * torch.randn(weight_params.size()).to(self.args.dev_device) * torch.from_numpy(layer_to_mask[layer]).to(self.args.dev_device)
-                    noise = noise_variance * torch.randn(weight_params.size()) * layer_to_mask[layer]
+                    noise = noise_variance * torch.randn(weight_params.size()).to(device) * layer_to_mask[layer].to(device)
                     weight_params.data.add_(noise.to(device))
         print(f"User {idx} poisoned the whole neural network with variance {noise_variance}.") # or should say, unpruned weights?
         
@@ -175,6 +174,13 @@ if __name__ == '__main__':
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
         pickle.dump(args, f)
 
+    if args.n_malicious == 3:
+        noise_variances = [0.05]
+    elif args.n_malicious == 6:
+        noise_variances = [0.05, 0.5, 1.0]
+    elif args.n_malicious == 10:
+        noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
+
     for epoch in tqdm(range(args.epochs)):
         users_in_epoch = []
         local_weights, local_losses , local_masks, local_prune = [], [], [], []
@@ -186,6 +192,7 @@ if __name__ == '__main__':
         #sample users for training
         idxs_users = np.random.choice(range(args.n_clients), m, replace=False)
         #train local models
+        noise_index = 0
         for idx in idxs_users:
             print(f"User {idx + 1} is training")
 
@@ -218,14 +225,15 @@ if __name__ == '__main__':
                 mask_model(train_model, masks[idx], init_weights)
 
             # Hang
-            if idx >= args.n_clients - args.n_malicious and args.attack_type != 2:
-                if args.attack_type == 1:
+            if idx >= args.n_clients - args.n_malicious:
+                if (idx + 1) % 2 == 1:
                     # for malicious user with model poisoning attack, skip training and poison
                     print(f"Malicious user {idx} is poisoning the model")
-                    poison_model(train_model)
+                    poison_model(train_model, noise_variances[noise_index])
+                    noise_index += 1
                     w, loss = local_model.update_weights(
                         model=train_model, epochs=0, device = device) # no train
-                elif args.attack_type == 3:
+                else:
                     # lazy attack
                     w, loss = local_model.update_weights(
                     model=train_model, epochs=int(args.local_ep * 0.1), device = device)
