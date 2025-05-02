@@ -46,6 +46,12 @@ for attack_type in [4]:
                 alpha=0.2)          # Transparency of the fill
             plt.plot(range(1, len(mean_line) + 1), mean_line, color=colors[i], label=rn)
 
+            # Add text annotations every 5 x-axis ticks
+            x = 0
+            plt.text(x + 1, mean_line[x], f'{mean_line[x]:.2f}', ha='center', va='bottom', fontsize=8, color='black')
+            for x in range(4, len(mean_line), 5):
+                plt.text(x + 1, mean_line[x], f'{mean_line[x]:.2f}', ha='center', va='bottom', fontsize=8, color='black')
+
         plt.legend(loc='best')
         plt.xlabel('Communication Round')
         plt.ylabel(y_axis_label)
