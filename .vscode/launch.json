@@ -56,7 +56,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "3", "--attack_type", "4", "--seed", "60", "--epochs", "100", "--rewind", "0", "--total_samples", "200", "--alpha", "1.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--dataset_mode", "non-iid", "--save_init_global_model", "1"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "6", "--attack_type", "4", "--seed", "40", "--epochs", "100", "--rewind", "0", "--total_samples", "200", "--alpha", "1.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--dataset_mode", "non-iid"]
         },
         {
             "name": "LotteryFL debug run",
@@ -129,6 +129,14 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/plotting/plot_malicious_winning_count.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
+            "name": "debug_15",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/plotting/debug_15.py",
             "console": "integratedTerminal",
             "justMyCode": true,
         },

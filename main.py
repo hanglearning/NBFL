@@ -135,7 +135,7 @@ def main():
     print(f"Using device {args.dev_device}")
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LBFL_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}"
+    log_root_name = f"LBFL_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}"
 
     ######## initiate global model ########
     init_global_model = create_init_model(cls=models[args.dataset]
@@ -228,6 +228,9 @@ def main():
 
     logger["validator_to_worker_acc_diff"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
+
+    # DEBUG for worker_15 lazy+noisy
+    logger["worker_15_val_rank"] = {r: {} for r in range(1, args.rounds + 1)}
     
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
@@ -346,7 +349,7 @@ def main():
             # verify validator tx signature
             validator.receive_and_verify_validator_tx_sig(online_validators)
             # validator produces global model
-            validator.produce_global_model_and_reward(idx_to_device, comm_round)
+            validator.produce_global_model_and_reward(idx_to_device, comm_round, logger)
             # validator post prune the global model
             validator.validator_post_prune()
             # validator produce block

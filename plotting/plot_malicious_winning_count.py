@@ -10,8 +10,9 @@ y_offset = 0
 y_axis_labels = []
 
 # for attack_type in [0, 1, 3, 4]:
-for attack_type in [0, 1, 4]:
-    for mal in [0, 3, 6, 10]:
+#     for mal in [0, 3, 6, 10]:
+for attack_type in [4]:
+    for mal in [3, 6, 10]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
         

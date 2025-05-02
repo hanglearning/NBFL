@@ -579,20 +579,47 @@ def calc_overlapping_mask_percent(latest_block_global_model, validator_model, wo
 	overlapping_mask_percent = len(same_positions) / global_mask.size
 	return overlapping_mask_percent
 
-def calc_updates_direction(w_grad, v_grad):
+# def calc_updates_direction(w_grad, v_grad, latest_block_global_model_pruned_ratio):
 
-	# Calculate the sign of each element in the arrays
-	sign_w_grad = np.sign(w_grad)
-	sign_v_grad = np.sign(v_grad)
+# 	# Calculate the sign of each element in the arrays
+# 	sign_w_grad = np.sign(w_grad)
+# 	sign_v_grad = np.sign(v_grad)
 
-	# Compare the signs and count the number of elements with the same sign
+# 	# Compare the signs and count the number of elements with the same sign
+# 	same_sign_count = np.sum(sign_w_grad == sign_v_grad)
+	
+# 	# Calculate the percentage of elements with the same sign
+# 	total_elements = w_grad.size
+# 	percent_same_sign = same_sign_count / total_elements - latest_block_global_model_pruned_ratio
+	
+# 	return percent_same_sign
+
+def calc_gradient_sign_alignment(worker_model, validator_model, latest_block_global_model):
+	
+	global_model_mask = calc_mask_from_model_without_mask_object(latest_block_global_model)
+	# Flatten the masks
+	global_model_mask = np.concatenate([tensor.flatten() for tensor in global_model_mask.values()])
+
+	worker_model_gradients = get_local_model_flattened_gradients(worker_model, latest_block_global_model)
+	validator_model_gradients = get_local_model_flattened_gradients(validator_model, latest_block_global_model)
+
+	# Identify positions where global_model_mask is 1
+	one_positions = np.nonzero(global_model_mask == 1)[0]
+
+	# Extract elements at these positions
+	worker_elements = worker_model_gradients[one_positions]
+	validator_elements = validator_model_gradients[one_positions]
+
+	sign_w_grad = np.sign(worker_elements)
+	sign_v_grad = np.sign(validator_elements)
 	same_sign_count = np.sum(sign_w_grad == sign_v_grad)
-	
-	# Calculate the percentage of elements with the same sign
-	total_elements = w_grad.size
-	percent_same_sign = same_sign_count / total_elements
-	
-	return percent_same_sign
+
+	# Calculate sign alignment
+	total_positions = one_positions.size
+	alignment_percentage = same_sign_count / total_positions
+
+	return alignment_percentage
+
 
 def plot_pos_book(pos_book, log_dir, comm_round, plot_diff=True):
 	'''
