@@ -41,6 +41,15 @@
             "args": ["--CELL", "1", "--n_malicious", "3", "--seed", "30", "--epochs", "100", "--rewind", "0", "--attack_type", "4", "--total_samples", "200", "--alpha_dirichlet", "1.0", "--dataset_mode", "non-iid"]
         },
         {
+            "name": "LotteryFL",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}//baseline_codebases/LotteryFL/lotteryFL.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--n_malicious", "10", "--seed", "50", "--total_samples", "200", "--alpha", "0.0", "--dataset_mode", "iid"]
+        },
+        {
             "name": "standalone_LTH",
             "type": "python",
             "request": "launch",
