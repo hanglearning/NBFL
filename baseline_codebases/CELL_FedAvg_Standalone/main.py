@@ -41,7 +41,7 @@ if __name__ == "__main__":
     parser.add_argument('--arch', type=str, default='cnn', help='cnn|mlp')
     parser.add_argument('--dataset_mode', type=str,
                         default='non-iid', help='non-iid|iid')
-    parser.add_argument('--alpha_dirichlet', type=float, default=0.5)
+    parser.add_argument('--alpha_dirichlet', type=float, default=1.0, help='dirichlet distribution parameter for non-iid data')
     parser.add_argument('--n_clients', type=int, default=20)
     parser.add_argument('--rounds', type=int, default=25)
     parser.add_argument('--prune_threshold', type=float, default=0.9) # 1 - sparsity
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     parser.add_argument('--alpha', type=float, default=0.5,
                         help="accuracy reduction factor")
     parser.add_argument('--save_freq', type=int, default=10)
-    parser.add_argument('--log_dir', type=str, default="../../logs")
+    parser.add_argument('--log_dir', type=str, default="logs")
     parser.add_argument('--train_verbose', type=bool, default=False)
     parser.add_argument('--test_verbose', type=bool, default=False)
     parser.add_argument('--prune_verbose', type=bool, default=False)
@@ -66,6 +66,7 @@ if __name__ == "__main__":
     parser.add_argument('--fast_dev_run', type=bool, default=False)
     parser.add_argument('--num_workers', type=int, default=0) # for pytorch data loader
     parser.add_argument('--rewind', type=int, default=0, help="reinit ticket model parameters before training")
+    parser.add_argument('--optimizer', type=str, default="Adam", help="SGD|Adam")
 
     parser.add_argument('--n_malicious', type=int, default=0)
 
@@ -149,8 +150,8 @@ if __name__ == "__main__":
         noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
 
     noise_attacker_idx = 0
-    for i in range(args.n_clients):
-        is_malicious = True if args.n_clients - i <= n_malicious else False
+    for i in range(1, args.n_clients + 1):
+        is_malicious = True if args.n_clients - i < n_malicious else False
         attack_type = 0
         noise_variance = 0
         if is_malicious and args.attack_type == 4:
@@ -162,7 +163,7 @@ if __name__ == "__main__":
                 attack_type = 3
         elif is_malicious:
             attack_type = args.attack_type
-        client = Client(i + 1, args, is_malicious, init_global_model, noise_variance, train_loaders[i], test_loaders[i], user_labels[i], global_test_loader)
+        client = Client(i, args, is_malicious, attack_type, noise_variance, init_global_model, train_loaders[i - 1], test_loaders[i - 1], user_labels[i - 1], global_test_loader)
         if is_malicious:
             if attack_type == 1:
                 print(f"Assigned client {i} malicious as noise attacker with noise variance: {noise_variance}.")
@@ -175,7 +176,8 @@ if __name__ == "__main__":
     
     server = Server(args, init_global_model, clients)
 
-    logger = {}
+    logger = {} # used to log accuracy, stake, forking events, etc.
+
     logger['global_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
     logger['local_max_epoch'] = {r: {} for r in range(1, args.rounds + 1)}
     logger['global_model_sparsity'] = {r: {} for r in range(1, args.rounds + 1)}
@@ -186,6 +188,16 @@ if __name__ == "__main__":
     logger['after_prune_acc'] = {r: {} for r in range(1, args.rounds + 1)}
     logger['after_prune_local_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
     logger['after_prune_global_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
+
+    logger['n_online_devices'] = {r: 0 for r in range(1, args.rounds + 1)}
+    logger['n_validators'] = {r: 0 for r in range(1, args.rounds + 1)}
+    logger['forking_event'] = {r: 0 for r in range(1, args.rounds + 1)}
+    logger['malicious_winning_count'] = {r: 0 for r in range(1, args.rounds + 1)}
+
+    logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
+
+    logger["validator_to_worker_acc_diff"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
 
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:

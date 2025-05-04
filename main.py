@@ -69,7 +69,7 @@ parser.add_argument('--rounds', type=int, default=25)
 parser.add_argument('--epochs', type=int, default=50, help="local max training epochs to get the max accuracy")
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--optimizer', type=str, default="Adam", help="SGD|Adam")
-parser.add_argument('--total_samples', type=int, default=40)
+parser.add_argument('--total_samples', type=int, default=200)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
 ####################### validation and rewards setting #######################
@@ -228,9 +228,6 @@ def main():
 
     logger["validator_to_worker_acc_diff"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
-
-    # DEBUG for worker_15 lazy+noisy
-    logger["worker_15_val_rank"] = {r: {} for r in range(1, args.rounds + 1)}
     
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:

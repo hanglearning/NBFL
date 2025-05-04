@@ -32,13 +32,22 @@
             "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "8", "--seed", "40", "--epochs", "50", "--rewind", "0", "--attack_type", "3", "--network_stability", "1", "--total_samples", "40", "--n_labels", "3", "--alpha", "0.5", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--prune_acc_trigger", "0.8", "--noise_variance", "0.1"]
         },
         {
-            "name": "CELL seed 50 mal 8 attack 1",
+            "name": "CELL",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--CELL", "1", "--n_clients", "20", "--n_malicious", "8", "--seed", "50", "--epochs", "100", "--rewind", "0", "--attack_type", "1", "--total_samples", "40", "--n_labels", "3", "--alpha", "0.5"]
+            "args": ["--CELL", "1", "--n_malicious", "3", "--seed", "30", "--epochs", "100", "--rewind", "0", "--attack_type", "4", "--total_samples", "200", "--alpha_dirichlet", "1.0", "--dataset_mode", "non-iid"]
+        },
+        {
+            "name": "standalone_LTH",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--standalone_LTH", "1", "--n_malicious", "0", "--seed", "30", "--epochs", "100", "--rewind", "0", "--attack_type", "0", "--total_samples", "200", "--alpha_dirichlet", "1.0", "--acc_drop_threshold", "0.05", "--dataset_mode", "non-iid"]
         },
         {
             "name": "LBFL seed 40 mal 8 attack 4",
@@ -56,7 +65,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "6", "--attack_type", "4", "--seed", "40", "--epochs", "100", "--rewind", "0", "--total_samples", "200", "--alpha", "1.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--dataset_mode", "non-iid"]
+            "args": ["--n_validators", "*", "--n_devices", "20", "--n_malicious", "6", "--attack_type", "4", "--seed", "30", "--epochs", "100", "--rewind", "0", "--total_samples", "200", "--alpha", "1.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--dataset_mode", "non-iid"]
         },
         {
             "name": "LotteryFL debug run",
@@ -131,15 +140,7 @@
             "program": "${workspaceFolder}/plotting/plot_malicious_winning_count.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-        },
-        {
-            "name": "debug_15",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/plotting/debug_15.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-        },
+        }
         
     ]
 }

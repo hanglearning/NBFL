@@ -21,6 +21,7 @@ class Client():
         idx,
         args,
         is_malicious,
+        attack_type,
         noise_variance,
         init_global_model,
         train_loader=None,
@@ -32,6 +33,7 @@ class Client():
         self.idx = idx
         self.args = args
         self._is_malicious = is_malicious
+        self.attack_type = attack_type
         self._test_loader = test_loader
         self._train_loader = train_loader
         self._user_labels = user_labels
@@ -104,7 +106,7 @@ class Client():
 
                 util_train(self.model,
                             self._train_loader,
-                            self.args.optimizer,
+                            # self.args.optimizer,
                             self.args.lr,
                             self.args.dev_device,
                             self.args.train_verbose)
