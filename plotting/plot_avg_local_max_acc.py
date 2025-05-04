@@ -10,8 +10,8 @@ y_axis_label = 'Accuracy'
 # draw for all devices
 # for attack_type in [0, 1, 3]:
 #     for mal in [0, 3, 6, 10]:
-for attack_type in [4]:
-    for mal in [3, 6, 10]:
+for attack_type in [0]:
+    for mal in [0]:
         if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
             continue
         if attack_type == 0:

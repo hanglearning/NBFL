@@ -165,7 +165,7 @@ class Client():
             model_acc = self.eval_model_by_train(pruned_model)
             
             # prune until the accuracy drop exceeds the threshold or below the target sparsity
-            if init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
+            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
