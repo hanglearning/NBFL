@@ -41,7 +41,7 @@ if __name__ == '__main__':
     device = 'cuda' if args.gpu else 'cpu'
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LotteryFL_seed_{args.seed}_{exe_date_time}_nmalicious_{args.n_malicious}"
+    log_root_name = f"LotteryFL_seed_{args.seed}_{exe_date_time}_nmalicious_{args.n_malicious}_attack_{args.attack_type}_alpha_{args.alpha}"
     args.log_dir = f"{args.log_dir}/{log_root_name}"
     os.makedirs(args.log_dir)
 
