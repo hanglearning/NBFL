@@ -485,11 +485,6 @@ class Device():
         print("direction_percent", {k: v for k, v in sorted(worker_to_agg_direction_percent.items(), key=lambda item: item[1])})
         print("mask_overlap_percent", {k: v for k, v in sorted(worker_to_agg_mask_overlap_percent.items(), key=lambda item: item[1])})
 
-        logger['worker_15_val_rank'][comm_round][self.idx] = {}
-        logger['worker_15_val_rank'][comm_round][self.idx]['eu_dist'] = list({k: v for k, v in sorted(worker_to_agg_euc_dist.items(), key=lambda item: item[1])}.keys()).index(15) + 1
-        logger['worker_15_val_rank'][comm_round][self.idx]['acc_diff'] = list({k: v for k, v in sorted(worker_to_agg_acc_diff.items(), key=lambda item: item[1])}.keys()).index(15) + 1
-        logger['worker_15_val_rank'][comm_round][self.idx]['direction_percent'] = list({k: v for k, v in sorted(worker_to_agg_direction_percent.items(), key=lambda item: item[1])}.keys()).index(15) + 1
-        logger['worker_15_val_rank'][comm_round][self.idx]['mask_overlap_percent'] = list({k: v for k, v in sorted(worker_to_agg_mask_overlap_percent.items(), key=lambda item: item[1])}.keys()).index(15) + 1
         # for validator_idx, validator_tx in self._verified_validator_txs.items():
         #     validator_power = self._pos_book[validator_idx] + 1
         #     for worker_idx, cos_sim in validator_tx['worker_to_cos_sim'].items():

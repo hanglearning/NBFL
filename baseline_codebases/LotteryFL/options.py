@@ -79,7 +79,7 @@ def args_parser():
 
     # malicious
     parser.add_argument('--n_malicious', type=int, default=0, help='number of malicious users')
-    # parser.add_argument('--attack_type', type=int, default=4, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack')
+    parser.add_argument('--attack_type', type=int, default=4, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack')
 
 
     parser.add_argument('--log_dir', type=str, default="./logs")

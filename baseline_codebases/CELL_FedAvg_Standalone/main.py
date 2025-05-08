@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
 
-    args.log_dir = f"{args.log_dir}/{run_name}_{exe_date_time}_seed_{args.seed}_malicious_{args.n_malicious}_attack_{args.attack_type}"
+    args.log_dir = f"{args.log_dir}/{run_name}_{exe_date_time}_seed_{args.seed}_malicious_{args.n_malicious}_attack_{args.attack_type}_alpha_{args.alpha_dirichlet}"
     os.makedirs(args.log_dir)
 
     init_global_model = create_init_model(cls=models[args.dataset]
