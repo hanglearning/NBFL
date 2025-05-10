@@ -8,12 +8,12 @@ logger_concerning = 'local_max_acc'
 y_axis_label = 'Accuracy'
 
 # draw for all devices
-# for attack_type in [0, 1, 3]:
+# for attack_type in [0, 4]:
 #     for mal in [0, 3, 6, 10]:
-for attack_type in [0, 4]:
-    for mal in [0, 3, 6, 10]:
-        for alpha in [1.0, 100.0]:
-
+#         for alpha in [1.0, 100.0]:
+for attack_type in [0]:
+    for mal in [0]:
+        for alpha in [1.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
             if attack_type == 0:
@@ -25,7 +25,7 @@ for attack_type in [0, 4]:
             run_names = ['LBFL', 'Standalone', 'FedAvg', 'CELL', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'CELL', 'LotteryFL']
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
 
-            # run_names = ['LBFL']
+            run_names = ['CELL', 'LBFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs'] = []
 
@@ -66,11 +66,12 @@ for attack_type in [0, 4]:
             plt.clf()
 
 # draw for legitimate devices
-# for attack_type in [0, 1, 3]:
-#     for mal in [3, 6, 10]:
-for attack_type in [0, 4]:
-    for mal in [0, 3, 6, 10]:
-        for alpha in [1.0, 100.0]:
+# for attack_type in [0, 4]:
+#     for mal in [0, 3, 6, 10]:
+#         for alpha in [1.0, 100.0]:
+for attack_type in [0]:
+    for mal in [0]:
+        for alpha in [1.0]:
             if attack_type == 0 or mal == 0:
                 continue
             if attack_type == 0:
@@ -82,7 +83,7 @@ for attack_type in [0, 4]:
             run_names = ['LBFL', 'Standalone', 'FedAvg', 'CELL', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'CELL', 'LotteryFL']
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
 
-            # run_names = ['LBFL']
+            run_names = ['CELL', 'LBFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs_legitimate'] = []
 
