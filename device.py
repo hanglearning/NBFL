@@ -64,6 +64,7 @@ class Device():
         self.max_model_acc = 0
         self._worker_pruned_ratio = 0
         self.noise_variance = noise_variance
+        self.acc_tracker = []
         # for validators
         self._validator_tx = None
         self._verified_worker_txs = {} # signature verified
@@ -153,7 +154,8 @@ class Device():
 
             self.model = max_model
             self.max_model_acc = max_acc
-
+        
+        self.acc_tracker.append(self.max_model_acc)
         logger['local_max_acc'][comm_round][self.idx] = self.max_model_acc
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
@@ -165,9 +167,19 @@ class Device():
             print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
             return
         
-        intended_prune_amount = self.max_model_acc
-        if intended_prune_amount < get_pruned_ratio(self.model):
-            intended_prune_amount = get_pruned_ratio(self.model)
+        # if self.attack_type != 1 and self.max_model_acc < self.args.prune_acc_trigger:
+        #     print(f"Worker {self.idx}'s max accuracy {self.max_model_acc} is less than the pruning accuracy trigger {self.args.prune_acc_trigger}. Skip pruning.")
+        #     return
+
+        # if self.attack_type != 1 and not check_converged(self.acc_tracker, threshold=0.05, window=self.args.acc_stable_prune_rounds):
+        #     print(f"Model not converged yet. Skip pruning.")
+        #     return
+        
+        # max_intended_prune_amount = np.average(self.acc_tracker[-self.args.acc_stable_prune_rounds:]) # * random.uniform(0.5, 1.0)
+        max_intended_prune_amount = self.max_model_acc * random.uniform(0.75, 1.25)
+        # max_intended_prune_amount = np.average(self.acc_tracker[-self.args.acc_stable_prune_rounds:]) * random.uniform(0.75, 1.25)
+        if max_intended_prune_amount < get_pruned_ratio(self.model):
+            max_intended_prune_amount = get_pruned_ratio(self.model)
         
         print()
         L_or_M = "M" if self._is_malicious else "L"
@@ -185,7 +197,7 @@ class Device():
                 to_prune_amount = 1 - self.args.target_sparsity # noise attacker tries to maximize the overlapping mask reward
             else:
                 to_prune_amount += random.uniform(0, self.args.max_prune_step)
-                to_prune_amount = min(to_prune_amount, intended_prune_amount, 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
+                to_prune_amount = min(to_prune_amount, max_intended_prune_amount, 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
             pruned_model = copy_model(self.model, self.args.dev_device)
             make_prune_permanent(pruned_model)
             l1_prune(model=pruned_model,
@@ -202,7 +214,7 @@ class Device():
                 self.max_model_acc = accs[-1]
                 break
 
-            if to_prune_amount == intended_prune_amount or 1 - to_prune_amount <= self.args.target_sparsity:
+            if to_prune_amount == max_intended_prune_amount or 1 - to_prune_amount <= self.args.target_sparsity:
                 # reached intended prune amount, stop
                 self.model = copy_model(pruned_model, self.args.dev_device)
                 self.max_model_acc = model_acc

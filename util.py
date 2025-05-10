@@ -652,3 +652,21 @@ def plot_pos_book(pos_book, log_dir, comm_round, plot_diff=True):
 	plt.title('POS Heat Map')
 
 	plt.savefig(f'{log_dir}/pos_heat_maps/pos_heat_map_round_{comm_round}.png')
+
+def check_converged(accuracies, threshold=0.05, window=3):
+    """
+    Check if the accuracies have converged using standard deviation.
+
+    Args:
+        accuracies (list): List of accuracy values.
+        threshold (float): Maximum standard deviation to consider as converged.
+        window (int): Number of recent values to consider.
+
+    Returns:
+        bool: True if converged, False otherwise.
+    """
+    if len(accuracies) < window:
+        return False  # Not enough data to check convergence
+
+    recent_values = accuracies[-window:]
+    return np.std(recent_values) < threshold
