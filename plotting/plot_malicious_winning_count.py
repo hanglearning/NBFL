@@ -26,7 +26,7 @@ for attack_type in [0, 4]:
                         if malicious_winning_count:
                             plt.scatter(comm_round, y_offset, marker='o', color='red')
                             plt.text(comm_round, y_offset, str(malicious_winning_count), ha='center', va='center', color='black')
-                y_axis_labels.append(f'{mal} Atckers - {attack_type_map[attack_type]}, sd: {lp.split('_')[lp.split('_').index('seed') + 1]}')
+                y_axis_labels.append(f'M{mal} - {attack_type_map[attack_type]}, sd: {lp.split('_')[lp.split('_').index('seed') + 1]}, α: {alpha}')
                 y_offset += 1
 
 legend_handles = [
@@ -43,6 +43,6 @@ plt.yticks(range(len(y_axis_labels)), y_axis_labels)
 
 plt.tight_layout()
 
-plt.savefig(f'{log_base_path}/LBFL/logs/malicious_winning_count_alpha_{alpha}.png', dpi=300)
+plt.savefig(f'{log_base_path}/LBFL/logs/malicious_winning_count.png', dpi=300)
 plt.clf()
 # plt.show()

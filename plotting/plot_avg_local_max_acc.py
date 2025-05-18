@@ -8,12 +8,9 @@ logger_concerning = 'local_max_acc'
 y_axis_label = 'Accuracy'
 
 # draw for all devices
-# for attack_type in [0, 4]:
-#     for mal in [0, 3, 6, 10]:
-#         for alpha in [1.0, 100.0]:
-for attack_type in [0]:
-    for mal in [0]:
-        for alpha in [1.0]:
+for attack_type in [0, 4]:
+    for mal in [0, 3, 6, 10]:
+        for alpha in [1.0, 100.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
             if attack_type == 0:
@@ -22,10 +19,9 @@ for attack_type in [0]:
             LBFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
             CELL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and f"attack_{attack_type}" in folder and "CELL" in folder and f"alpha_{alpha}" in folder]
             LotteryFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"nmalicious_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
-            run_names = ['LBFL', 'Standalone', 'FedAvg', 'CELL', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'CELL', 'LotteryFL']
+            run_names = ['LBFL', 'Standalone', 'FedAvg', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'LotteryFL']
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
 
-            run_names = ['CELL', 'LBFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs'] = []
 
@@ -66,12 +62,9 @@ for attack_type in [0]:
             plt.clf()
 
 # draw for legitimate devices
-# for attack_type in [0, 4]:
-#     for mal in [0, 3, 6, 10]:
-#         for alpha in [1.0, 100.0]:
-for attack_type in [0]:
-    for mal in [0]:
-        for alpha in [1.0]:
+for attack_type in [4]:
+    for mal in [3, 6, 10]:
+        for alpha in [1.0, 100.0]:
             if attack_type == 0 or mal == 0:
                 continue
             if attack_type == 0:
@@ -80,10 +73,9 @@ for attack_type in [0]:
             LBFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
             CELL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and f"attack_{attack_type}" in folder and "CELL" in folder and f"alpha_{alpha}" in folder]
             LotteryFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"nmalicious_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
-            run_names = ['LBFL', 'Standalone', 'FedAvg', 'CELL', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'CELL', 'LotteryFL']
+            run_names = ['LBFL', 'Standalone', 'FedAvg', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'LotteryFL']
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
 
-            run_names = ['CELL', 'LBFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs_legitimate'] = []
 

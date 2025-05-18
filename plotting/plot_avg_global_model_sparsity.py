@@ -7,12 +7,9 @@ log_base_path = '/Users/chenhang/Documents/Working'
 logger_concerning = 'global_model_sparsity'
 y_axis_label = 'Sparsity'
 
-# for attack_type in [0, 4]:
-#     for mal in [0, 3, 6, 10]:
-#         for alpha in [1.0, 100.0]:
-for attack_type in [0]:
-    for mal in [0]:
-        for alpha in [1.0]:
+for attack_type in [0, 4]:
+    for mal in [0, 3, 6, 10]:
+        for alpha in [1.0, 100.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
             if attack_type == 0:
@@ -23,8 +20,7 @@ for attack_type in [0]:
             LotteryFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"nmalicious_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
             
-            # run_names = ['LBFL', 'Standalone', 'FedAvg', 'CELL', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'CELL', 'LotteryFL']
-            run_names = ['LBFL', 'CELL']
+            run_names = ['LBFL', 'Standalone', 'FedAvg', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'LotteryFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs'] = []
 
