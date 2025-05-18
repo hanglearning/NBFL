@@ -175,6 +175,8 @@ def main():
         noise_variances = [0.05]
     elif args.n_malicious == 6:
         noise_variances = [0.05, 0.5, 1.0]
+    elif args.n_malicious == 9:
+        noise_variances = [0.05, 0.05, 0.5, 1.0]
     elif args.n_malicious == 10:
         noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
 
