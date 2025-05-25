@@ -76,6 +76,7 @@ parser.add_argument('--n_malicious', type=int, default=8, help="number of malici
 parser.add_argument('--pass_all_models', type=int, default=0, help='turn off validation and pass all models, used for debug or create baselines')
 parser.add_argument('--validate_center_threshold', type=float, default=0.1, help='only recognize malicious devices if the difference of two centers of KMeans exceed this threshold')
 parser.add_argument('--inverse_acc_weights', type=int, default=0, help='sometimes may inverse the accuracy weights to give more weights to minority workers. ideally, malicious workers should have been filtered out and not be considered here')
+parser.add_argument('--top_overlapping_percent', type=float, default=0.5, help='used to calculate the overlap percent of the model signature, which is used to determine the reward for pruning')
 
 ####################### attack setting #######################
 parser.add_argument('--attack_type', type=int, default=0, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack, 4 - model poisoning and lazy attack')
@@ -401,7 +402,7 @@ def main():
 
         ### record pos book ###
         for device in devices_list:
-            logger["pos_book"][comm_round][device.idx] = deepcopy(device._pos_book)
+            logger["pos_book"][comm_round][device.idx] = deepcopy(device.pos_book)
 
         ### record when a winning block from a malicious validator is accepted in network ###
         logger['malicious_winning_count'][comm_round] = 0
