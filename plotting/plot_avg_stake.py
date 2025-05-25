@@ -12,7 +12,7 @@ attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack
 #     for mal in [0, 3, 6, 10]:
 #         for alpha in [1.0, 100.0]:
 for attack_type in [4]:
-    for mal in [3, 6, 9, 10]:
+    for mal in [9]:
         for alpha in [1.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
@@ -26,9 +26,9 @@ for attack_type in [4]:
                 with open(f'{lp}/logger.pickle', 'rb') as file:
                     logger = pickle.load(file)
                     avg_stake_over_rounds = []
-                    for comm_round, device_to_pos_book in logger['pos_book'].items():
+                    for comm_round, device_topos_book in logger['pos_book'].items():
                         stake_over_devices = []
-                        for device_idx, pos_book in device_to_pos_book.items():
+                        for device_idx, pos_book in device_topos_book.items():
                             stake_over_devices.append(list(pos_book.values())) # op1: convert pos book over devices to list
                         stake_over_devices = list(zip(*stake_over_devices)) # op2: stack stake info over devices
                         avg_stake_over_rounds.append(np.mean(stake_over_devices, axis=1)) # op3: average over the device

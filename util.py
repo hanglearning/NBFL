@@ -557,27 +557,63 @@ def subtract_nested_dicts(dict1, dict2):
 	return result
 
 def calc_overlapping_mask_percent(latest_block_global_model, validator_model, worker_model):
-	val_mask = calc_mask_from_model_with_mask_object(validator_model)
-	worker_mask = calc_mask_from_model_with_mask_object(worker_model)
-	if not val_mask or not worker_mask:
-		return 0
-	
-	# flatten the masks
-	val_mask = np.concatenate([layer_mask.flatten() for layer_mask in val_mask.values()])
-	worker_mask = np.concatenate([layer_mask.flatten() for layer_mask in worker_mask.values()])
+    val_mask = calc_mask_from_model_with_mask_object(validator_model)
+    worker_mask = calc_mask_from_model_with_mask_object(worker_model)
+    if not val_mask or not worker_mask:
+        return 0
 
-	global_mask = calc_mask_from_model_without_mask_object(latest_block_global_model)
-	global_mask = np.concatenate([layer_mask.flatten() for layer_mask in global_mask.values()])
+    # Flatten the masks
+    val_mask = np.concatenate([layer_mask.flatten() for layer_mask in val_mask.values()])
+    worker_mask = np.concatenate([layer_mask.flatten() for layer_mask in worker_mask.values()])
 
-	global_mask_positions = set(zip(*np.where(global_mask == 0)))
-	val_mask_positions = set(zip(*np.where(val_mask == 0)))
-	worker_mask_positions = set(zip(*np.where(worker_mask == 0)))
+    global_mask = calc_mask_from_model_without_mask_object(latest_block_global_model)
+    global_mask = np.concatenate([layer_mask.flatten() for layer_mask in global_mask.values()])
 
-	val_mask_positions = val_mask_positions - global_mask_positions
-	same_positions = val_mask_positions.intersection(worker_mask_positions)
+    # Convert masks to integer type for NOR operation
+    val_mask = val_mask.astype(np.int32)
+    worker_mask = worker_mask.astype(np.int32)
 
-	overlapping_mask_percent = len(same_positions) / global_mask.size
-	return overlapping_mask_percent
+    # Identify positions where the global mask is unpruned (1)
+    global_unpruned_positions = global_mask == 1
+
+    # Apply NOR logic - did not use XNOR because otherwise free 100% rewards for itself after model pruning ratio converges 
+    nor_mask = ~(val_mask | worker_mask) + 2
+
+    # Focus only on positions where the global mask is unpruned
+    valid_positions = global_unpruned_positions & (nor_mask == 1)
+
+    # Calculate the percentage of overlapping positions
+    overlapping_mask_percent = np.sum(valid_positions) / np.sum(global_unpruned_positions)
+    return overlapping_mask_percent
+
+def calc_top_overlapping_gradient_magnitude_percent(latest_block_global_model, validator_model, worker_model, top_percent):
+    global_mask = calc_mask_from_model_without_mask_object(latest_block_global_model)
+    global_mask = np.concatenate([layer_mask.flatten() for layer_mask in global_mask.values()])
+    global_mask_positions = set(zip(*np.where(global_mask == 0)))
+    
+    # On the unpruned area of the latest_block_global_model (i.e., the training area), find the top x% locations of gradients with largest magnitude, and then calculate overlapping percentage
+    worker_gradients = abs(get_local_model_flattened_gradients(worker_model, latest_block_global_model))
+    validator_gradients = abs(get_local_model_flattened_gradients(validator_model, latest_block_global_model))
+    
+    if global_mask_positions:
+        worker_gradients = np.delete(worker_gradients, list(global_mask_positions))
+        validator_gradients = np.delete(validator_gradients, list(global_mask_positions))
+    
+    # Find the positions of the top x% gradients
+    num_top_elements = int(np.ceil(len(validator_gradients) * top_percent))
+    w_threshold = np.partition(worker_gradients, -num_top_elements)[-num_top_elements]
+    v_threshold = np.partition(validator_gradients, -num_top_elements)[-num_top_elements]
+    
+    # Use np.where to get the positions of the top x% gradients
+    w_top_positions = set(zip(*np.where(worker_gradients >= w_threshold)))
+    v_top_positions = set(zip(*np.where(validator_gradients >= v_threshold)))
+    
+    # Find the intersection of the positions
+    same_positions = w_top_positions.intersection(v_top_positions)
+
+    # Calculate the overlapping percentage
+    overlapping_mask_percent = len(same_positions) / num_top_elements
+    return overlapping_mask_percent
 
 # def calc_updates_direction(w_grad, v_grad, latest_block_global_model_pruned_ratio):
 
@@ -621,23 +657,23 @@ def calc_gradient_sign_alignment(worker_model, validator_model, latest_block_glo
 	return alignment_percentage
 
 
-def plot_pos_book(pos_book, log_dir, comm_round, plot_diff=True):
+def plotpos_book(pos_book, log_dir, comm_round, plot_diff=True):
 	'''
 		Debug the rewarding function to see if it rewards more to the 
 		legitimates and less to the maliciouses.
 		If not plot_diff, plot the current pos_book.
 	'''
 	os.makedirs(f'{log_dir}/pos_heat_maps/', exist_ok=True)
-	cur_pos_book = pos_book[comm_round]
+	curpos_book = pos_book[comm_round]
 	if plot_diff and comm_round > 1:
 		# Get the previous pos_book
-		prev_pos_book = pos_book[comm_round - 1]
+		prevpos_book = pos_book[comm_round - 1]
 		# Calculate the difference between the current and previous pos_books
-		cur_pos_book = subtract_nested_dicts(cur_pos_book, prev_pos_book)
+		curpos_book = subtract_nested_dicts(curpos_book, prevpos_book)
 	# Convert the dictionary to a 2D array
-	rows = sorted(cur_pos_book.keys())
-	cols = sorted(cur_pos_book[rows[0]].keys())
-	array = [[cur_pos_book[row][col] for col in cols] for row in rows]
+	rows = sorted(curpos_book.keys())
+	cols = sorted(curpos_book[rows[0]].keys())
+	array = [[curpos_book[row][col] for col in cols] for row in rows]
 
 	# Transpose the array to exchange rows and columns
 	transposed_array = list(map(list, zip(*array)))
