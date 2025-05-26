@@ -364,6 +364,7 @@ class Device():
         print("acc_diff", {k: v for k, v in sorted(self.worker_to_acc_diff.items(), key=lambda item: item[1])})
         print("direction_percent", {k: v for k, v in sorted(self.worker_to_direction_percent.items(), key=lambda item: item[1])})
         print("mask_overlap_percent", {k: v for k, v in sorted(self.worker_to_mask_overlap_percent.items(), key=lambda item: item[1])})
+        print("top_grad_magnitudes_overlap_percent", {k: v for k, v in sorted(self.worker_to_top_grad_magnitudes_overlap_percent.items(), key=lambda item: item[1])})
 
         if self._is_malicious and self.attack_type == 1:
             self_acc_diff = self.worker_to_acc_diff[self.idx]
@@ -415,7 +416,7 @@ class Device():
         # reward = (worker_norm_acc_diff + worker_norm_dir_percent) * (1 + worker_norm_mask_percent) * (1 + worker_norm_eu) - last worked
         
         # reward = (worker_norm_acc_diff + worker_norm_dir_percent + worker_norm_eu) * (1 + worker_norm_mask_percent)
-        reward =  (worker_norm_dir_percent + worker_norm_mask_percent) * worker_to_top_mag_overlap_percent * worker_norm_eu * worker_norm_acc_diff
+        reward = worker_norm_mask_percent * worker_to_top_mag_overlap_percent * worker_norm_eu * (worker_norm_acc_diff + np.finfo(np.float64).tiny)
 
 
         return reward
@@ -537,9 +538,10 @@ class Device():
         worker_to_agg_top_mag_overlap_percent = {w: tmo - min(worker_to_agg_top_mag_overlap_percent.values()) for w, tmo in worker_to_agg_top_mag_overlap_percent.items()}
         for worker_idx in worker_to_agg_acc_diff:
             self._device_to_ungranted_reward[worker_idx] += self.calc_ungranted_reward(worker_to_agg_acc_diff[worker_idx], worker_to_agg_mask_overlap_percent[worker_idx], worker_to_agg_euc_dist[worker_idx], worker_to_agg_direction_percent[worker_idx], worker_to_agg_top_mag_overlap_percent[worker_idx])
-    
-        worker_to_model_weight = self._device_to_ungranted_reward
+
+        worker_to_model_weight = {worker_idx: weight/sum(self._device_to_ungranted_reward.values()) for worker_idx, weight in self._device_to_ungranted_reward.items()}
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
+        print("worker_to_model_weight", {k: v for k, v in sorted(worker_to_model_weight.items(), key=lambda item: item[1])})
 
         # DEBUG
         # print("V", self.idx, self._device_to_ungranted_reward)
@@ -675,8 +677,8 @@ class Device():
         if to_resync_chain.get_chain_length() == 0:
             print(f"resync_to_device {self._resync_to}'s chain length is 0. Chain not resynced. Resync next round.") # may resync to the same device, but the device may have appended other blocks to make its chain valid at the beginning of the next round
             return False
-        if len(to_resync_chain.chain) >= 2 and to_resync_chain.chain[-2].produced_by == to_resync_chain.chain[-1].produced_by == winning_block.produced_by:
-            print(f"resync_to_device {self._resync_to}'s chain's last two blocks' producer is identical to the winning_block's ({winning_block.produced_by}). To mitigate monopoly, chain not resynced. Resync next round.")  # the same validator cannot win two times consecutively - mitigate monopoly
+        if len(to_resync_chain.chain) >= 1 and to_resync_chain.chain[-1].produced_by == winning_block.produced_by:
+            print(f"resync_to_device {self._resync_to}'s chain's last block's producer is identical to the winning_block's ({winning_block.produced_by}). To mitigate monopoly, chain not resynced. Resync next round.")  # the same validator cannot win two times consecutively - mitigate monopoly
             return False
         return True
     
@@ -1067,7 +1069,7 @@ class Device():
             # device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_to_norm_acc_diff[worker_idx], worker_to_norm_mask_overlap_percent[worker_idx], worker_to_norm_euc_dist[worker_idx], worker_to_norm_direction_percent[worker_idx])
             device_to_should_reward[worker_idx] += self.calc_ungranted_reward(worker_to_agg_acc_diff[worker_idx], worker_to_agg_mask_overlap_percent[worker_idx], worker_to_agg_euc_dist[worker_idx], worker_to_agg_direction_percent[worker_idx], worker_to_agg_top_mag_overlap_percent[worker_idx])
 
-        worker_to_model_weight = deepcopy(device_to_should_reward)
+        worker_to_model_weight = {worker_idx: weight/sum(device_to_should_reward.values()) for worker_idx, weight in device_to_should_reward.items()}
         
        # worker_to_model_weight = {worker_idx: reward/sum(device_to_should_reward.values()) for worker_idx, reward in device_to_should_reward.items()}
         # device_to_should_reward = deepcopy(worker_to_model_weight)
