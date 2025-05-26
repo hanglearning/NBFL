@@ -416,7 +416,7 @@ class Device():
         # reward = (worker_norm_acc_diff + worker_norm_dir_percent) * (1 + worker_norm_mask_percent) * (1 + worker_norm_eu) - last worked
         
         # reward = (worker_norm_acc_diff + worker_norm_dir_percent + worker_norm_eu) * (1 + worker_norm_mask_percent)
-        reward = worker_norm_mask_percent * worker_to_top_mag_overlap_percent * worker_norm_eu * (worker_norm_acc_diff + np.finfo(np.float64).tiny)
+        reward = (worker_norm_mask_percent + 0.001) * (worker_to_top_mag_overlap_percent + 0.001) * (worker_norm_eu + 0.001) * (worker_norm_acc_diff + 0.001)
 
 
         return reward
