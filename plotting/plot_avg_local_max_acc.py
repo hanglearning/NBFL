@@ -8,8 +8,10 @@ logger_concerning = 'local_max_acc'
 y_axis_label = 'Accuracy'
 
 # draw for all devices
-for attack_type in [0, 4]:
-    for mal in [0, 3, 6, 10]:
+# for attack_type in [0, 4]:
+#     for mal in [0, 3, 6, 10]:
+for attack_type in [4]:
+    for mal in [3, 6, 9, 10]:
         for alpha in [1.0, 100.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
@@ -22,6 +24,7 @@ for attack_type in [0, 4]:
             run_names = ['LBFL', 'Standalone', 'FedAvg', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'LotteryFL']
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
 
+            run_names = ['LBFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs'] = []
 
@@ -55,7 +58,7 @@ for attack_type in [0, 4]:
             plt.xlabel('Communication Round')
             plt.ylabel(y_axis_label)
             attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack', 4: 'Poison & Lazy'}
-            plt.title(f'{" ".join(logger_concerning.split('_')).title()} - {mal} Attackers - {attack_type_map[attack_type]}')
+            plt.title(f'{" ".join(logger_concerning.split('_')).title()} - {mal} Atkers - {attack_type_map[attack_type]}, α: {alpha}')
 
             plt.savefig(f'{log_base_path}/LBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}.png', dpi=300)
 
@@ -75,7 +78,8 @@ for attack_type in [4]:
             LotteryFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"nmalicious_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
             run_names = ['LBFL', 'Standalone', 'FedAvg', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'LotteryFL']
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
-
+            
+            run_names = ['LBFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs_legitimate'] = []
 
@@ -110,7 +114,7 @@ for attack_type in [4]:
             plt.xlabel('Communication Round')
             plt.ylabel(y_axis_label)
             attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack', 3: 'Lazy Attack', 4: 'Poison & Lazy'}
-            plt.title(f'LEGITIMATE {" ".join(logger_concerning.split('_')).title()} - {mal} Attackers - {attack_type_map[attack_type]}')
+            plt.title(f'LEGIT {" ".join(logger_concerning.split('_')).title()} - {mal} Atkers - {attack_type_map[attack_type]}, α: {alpha}')
 
             plt.savefig(f'{log_base_path}/LBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_legitimate.png', dpi=300)
 

@@ -12,8 +12,8 @@ attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack
 #     for mal in [0, 3, 6, 10]:
 #         for alpha in [1.0, 100.0]:
 for attack_type in [4]:
-    for mal in [10]:
-        for alpha in [1.0]:
+    for mal in [3,6,9,10]:
+        for alpha in [1.0, 100.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
             
@@ -64,7 +64,7 @@ for attack_type in [4]:
 
             plt.xlabel('Communication Round', fontsize=10)
             plt.ylabel('Stake', fontsize=10)
-            plt.title(f'Stake Curves - {mal} Attackers - {attack_type_map[attack_type]}', fontsize=12)
+            plt.title(f'Stake Curves - {mal} Atkers - {attack_type_map[attack_type]}, α: {alpha}', fontsize=12)
 
             # Add grid based on x-axis
             plt.grid(axis='x')

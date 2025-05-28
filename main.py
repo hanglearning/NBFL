@@ -107,6 +107,7 @@ parser.add_argument('--top_percent_winning', type=int, default=0.3,
 ####################### debug setting #######################
 parser.add_argument('--show_all_validation_performance', type=int, default=0, help='0 - do not show, 1 - show the validation performance of EVERY validator against the malicious devices in produce_global_model_and_reward()')
 parser.add_argument('--show_validation_performance_in_block', type=int, default=1, help='0 - do not show, 1 - show the validation performance against the malicious devices in its block')
+parser.add_argument('--save_devices_objects__each_round_for_debug', type=int, default=1, help='about 4.4M per device with one block. 0 - do not save, 1 - save')
 
 ####################### other settings #######################
 parser.add_argument('--save_init_global_model', type=int, default=0, help='0 - do not save, 1 - save')
@@ -386,35 +387,39 @@ def main():
 
         ''' Evaluation '''
         ### record forking events ###
-        forking = 0
         blocks_produced_by = set()
         for device in init_online_devices:
             if device.has_appended_block:
                 blocks_produced_by.add(device.blockchain.get_last_block().produced_by)
-                if len(blocks_produced_by) > 1:
-                    forking = 1
-                    break
-        logger['forking_event'][comm_round] = forking
+        logger['forking_event'][comm_round] = len(blocks_produced_by)
 
         ### record validation accuracies ###
         for device in init_online_devices:
             logger["validator_to_worker_acc_diff"][comm_round][device.idx] = deepcopy(device.worker_to_acc_diff)
+            logger["validator_to_worker_to_euc_dist"][comm_round][device.idx] = deepcopy(device.worker_to_euc_dist)
+            logger["validator_to_worker_to_mask_overlap_percent"][comm_round][device.idx] = deepcopy(device.worker_to_mask_overlap_percent)
+            logger["validator_to_worker_to_top_grad_magnitudes_overlap_percent"][comm_round][device.idx] = deepcopy(device.worker_to_top_grad_magnitudes_overlap_percent)
 
         ### record pos book ###
         for device in devices_list:
             logger["pos_book"][comm_round][device.idx] = deepcopy(device.pos_book)
 
         ### record when a winning block from a malicious validator is accepted in network ###
-        logger['malicious_winning_count'][comm_round] = 0
+        mal_blocks_produced_by = set()
         for device in init_online_devices:
             if device.has_appended_block:
                 block_produced_by = device.blockchain.get_last_block().produced_by
                 if idx_to_device[block_produced_by]._is_malicious:
-                   logger['malicious_winning_count'][comm_round] += 1
+                    mal_blocks_produced_by.add(block_produced_by)
+        logger['malicious_winning_count'][comm_round] = len(mal_blocks_produced_by)
 
         # save logger
         with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
             pickle.dump(logger, f)
+
+        if args.save_devices_objects__each_round_for_debug:
+            with open(f'{args.log_dir}/idx_to_device_round_{comm_round}.pickle', 'wb') as f:
+                pickle.dump(idx_to_device, f)
 
 if __name__ == "__main__":
     main()
