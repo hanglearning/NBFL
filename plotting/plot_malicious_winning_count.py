@@ -9,8 +9,10 @@ attack_type_map = {0: 'No Attack', 1: 'Poison', 2: 'Label Flipping', 3: 'Lazy', 
 y_offset = 0
 y_axis_labels = []
 
-for attack_type in [0, 4]:
-    for mal in [0, 3, 6, 10]:
+# for attack_type in [0, 4]:
+#     for mal in [0, 3, 6, 10]:
+for attack_type in [4]:
+    for mal in [3, 6, 9, 10]:
         for alpha in [1.0, 100.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
@@ -30,7 +32,7 @@ for attack_type in [0, 4]:
                 y_offset += 1
 
 legend_handles = [
-    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label=f'Count of devices appended a malicious block, alpha = {alpha}')
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label=f'# of mal winning block, α = {alpha}')
 ]
 
 plt.legend(handles=legend_handles, loc='best', prop={'size': 10})
