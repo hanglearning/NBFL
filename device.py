@@ -277,6 +277,14 @@ class Device():
         # worker broadcast tx, imagine the tx is broadcasted to all peers volunterring to become validators
         # see receive_and_verify_worker_tx_sig()
         return
+
+    def volunteer_to_be_validator(self):
+        if self._is_malicious:
+            return True
+        sum_stake = sum(self.pos_book.values())
+        if sum_stake == 0:
+            return random.random() <= 0.5 # probably the first round
+        return random.random() <= self.pos_book[self.idx] / sum_stake
    
     ''' Validators' Methods '''
 
@@ -873,12 +881,14 @@ class Device():
         # if self.blockchain.get_chain_length() >= 2 and self.blockchain.chain[-1].produced_by == self.blockchain.chain[-2].produced_by:
         if self.blockchain.get_chain_length() >= 1:
             received_validators_to_blocks.pop(self.blockchain.chain[-1].produced_by, None)
-        received_validatorspos_book = {block.produced_by: self.pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
-        if not received_validatorspos_book:
+        received_validators_pos_book = {block.produced_by: self.pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
+        received_validators_pos_book = {k: v for k, v in sorted(received_validators_pos_book.items(), key=lambda item: item[1], reverse=True)}
+
+        if not received_validators_pos_book:
             print(f"\n{self.idx} has no valid-received block. Resync chain next round.")
             return picked_block
-        top_stake = max(received_validatorspos_book.values())
-        candidates = [validator for validator, stake in received_validatorspos_book.items() if stake == top_stake]
+        top_stake = max(received_validators_pos_book.values())
+        candidates = [validator for validator, stake in received_validators_pos_book.items() if stake == top_stake]
         # if self.idx in candidates:
         #     # oppourtunistic validator
         #     winning_validator = self.idx

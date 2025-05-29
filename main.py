@@ -93,8 +93,6 @@ parser.add_argument('--acc_stable_prune_rounds', type=int, default=3, help='numb
 
 ####################### blockchain setting #######################
 parser.add_argument('--n_devices', type=int, default=10)
-parser.add_argument('--n_validators', type=str, default='*', 
-                    help='if input * to this argument, the number of validators is random from round to round')
 parser.add_argument('--check_signature', type=int, default=0, 
                     help='if set to 0, all signatures are assumed to be verified to save execution time')
 parser.add_argument('--network_stability', type=float, default=1.0, 
@@ -225,13 +223,15 @@ def main():
     logger['after_prune_global_test_acc'] = {r: {} for r in range(1, args.rounds + 1)}
 
     logger['n_online_devices'] = {r: 0 for r in range(1, args.rounds + 1)}
-    logger['n_validators'] = {r: 0 for r in range(1, args.rounds + 1)}
     logger['forking_event'] = {r: 0 for r in range(1, args.rounds + 1)}
     logger['malicious_winning_count'] = {r: 0 for r in range(1, args.rounds + 1)}
 
     logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
 
     logger["validator_to_worker_acc_diff"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["validator_to_worker_to_euc_dist"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["validator_to_worker_to_mask_overlap_percent"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["validator_to_worker_to_top_grad_magnitudes_overlap_percent"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
     
     # save args
@@ -313,25 +313,19 @@ def main():
 
         ''' Phase 2 - Validators Model Validation and Exchange Votes '''
         # workers volunteer to become validators
-        if args.n_validators == '*':
-            n_validators = random.randint(1, len(online_workers))
-        else:
-            n_validators = int(args.n_validators)
+        # the probability of a worker to become a validator is proportional to its stake in its pos_book
         
-        print(f"\nRound {comm_round}, {n_validators} validators selected.")
-        logger['n_validators'][comm_round] = n_validators
-
         online_validators = []
-        random.shuffle(online_workers)
         
         for worker in online_workers:
             if worker.is_online():
                 # receive worker tx and verify signature
                 worker.receive_and_verify_worker_tx_sig(online_workers) # worker also receives other workers' tx due to verifying pruning reward
-                if n_validators > 0:
+                if worker.volunteer_to_be_validator():
                     worker.role = 'validator'
                     online_validators.append(worker)
-                    n_validators -= 1
+        
+        print(f"\nRound {comm_round}, {len(online_validators)} validators selected.")
             
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]
