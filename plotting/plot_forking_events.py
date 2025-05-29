@@ -34,9 +34,9 @@ for attack_type in [4]:
                 y_axis_labels.append(f'M{mal} - {attack_type_map[attack_type]}, sd: {lp.split('_')[lp.split('_').index('seed') + 1]}, α: {alpha}')
                 y_offset += 1
         
-            legend_handles = [
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label=f'Forking Event, α = {alpha}')
-            ]
+    legend_handles = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label=f'Forking Event, α = {alpha}')
+    ]
 
     plt.legend(handles=legend_handles, loc='best', prop={'size': 10})
 

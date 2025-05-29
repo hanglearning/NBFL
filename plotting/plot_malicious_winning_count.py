@@ -32,7 +32,7 @@ for attack_type in [4]:
                 y_offset += 1
 
 legend_handles = [
-    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label=f'# of mal winning block, α = {alpha}')
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label=f'# of mal winning blocks, α = {alpha}')
 ]
 
 plt.legend(handles=legend_handles, loc='best', prop={'size': 10})
