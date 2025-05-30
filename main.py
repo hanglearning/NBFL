@@ -361,11 +361,11 @@ def main():
             # pick winning block based on pos
             winning_block = device.pick_winning_block(idx_to_device)
             if not winning_block:
-                # no winning_block found, perform chain_resync next round
+                print(f"Device {device.idx} has no valid winning_block found (could be due to hash conflict), perform chain_resync next round")
                 continue
             # check block
             if not device.verify_winning_block(winning_block, comm_round, idx_to_device):
-                # block check failed, perform chain_resync next round
+                print(f"Device {device.idx}'s block check failed, perform chain_resync next round")
                 continue
         
         ''' Phase 5 - All Online Devices Process and Append Winning Block '''
