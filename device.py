@@ -881,57 +881,62 @@ class Device():
         # if self.blockchain.get_chain_length() >= 2 and self.blockchain.chain[-1].produced_by == self.blockchain.chain[-2].produced_by:
         if self.blockchain.get_chain_length() >= 1:
             received_validators_to_blocks.pop(self.blockchain.chain[-1].produced_by, None)
-        received_validators_pos_book = {block.produced_by: self.pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
-        received_validators_pos_book = {k: v for k, v in sorted(received_validators_pos_book.items(), key=lambda item: item[1], reverse=True)}
-        received_validators_groups = defaultdict(list, {value: [key for key, v in received_validators_pos_book.items() if v == value] for value in set(received_validators_pos_book.values())})
-        received_validators_groups = {k: received_validators_groups[k] for k in sorted(received_validators_groups.keys(), reverse=True)}
-        
-        for stake, candidates in received_validators_groups.items():
-            # 1. if more than one candidate block, pick the one that rewards itself the most
-            if len(candidates) > 1:
-                val_to_reward = {validator: received_validators_to_blocks[validator].device_to_reward[self.idx] for validator in candidates}
-                max_reward = max(val_to_reward.values())
-                candidates = [validator for validator, reward in val_to_reward.items() if reward == max_reward]
-            # 2. if more than one candidate block, pick the one whose global model has the best accuracy on device's local data
-            if len(candidates) > 1:
-                val_to_acc = {validator: self.eval_model_by_train(received_validators_to_blocks[validator].global_model) for validator in candidates}
-                max_acc = max(val_to_acc.values())
-                candidates = [validator for validator, acc in val_to_acc.items() if acc == max_acc]
-            # 3. if still more than one candidate block, pick the one whose global model gave this device most weight
-            if len(candidates) > 1:
-                block_to_its_model_weight = {}
-                for validator in candidates:
-                    block = received_validators_to_blocks[validator]
-                    worker_to_agg_acc_diff = defaultdict(float)
-                    worker_to_agg_euc_dist = defaultdict(float)
-                    worker_to_agg_direction_percent = defaultdict(float)
-                    worker_to_agg_mask_overlap_percent = defaultdict(float)
-                    worker_to_model_weight = defaultdict(float)
-                    for validator_idx, validator_tx in block.validator_txs.items():
-                        # verify block producer's self reported accuracy
-                        validator_power = (self.pos_book[validator_idx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in block.validator_txs])
-                        for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items():
-                            worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power
-                        for worker_idx, direction_percent in validator_tx['worker_to_direction_percent'].items():
-                            worker_to_agg_direction_percent[worker_idx] += direction_percent * validator_power
-                        for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
-                            worker_to_agg_acc_diff[worker_idx] += worker_acc_diff * validator_power
-                        for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
-                            worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
-                    for worker in worker_to_agg_acc_diff:
-                        worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_direction_percent[worker] + worker_to_agg_mask_overlap_percent[worker]
-                    worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
-                    block_to_its_model_weight[validator] = worker_to_model_weight[self.idx]
-                max_model_weight = max(block_to_its_model_weight.values())
-                candidates = [validator for validator, model_weight in block_to_its_model_weight.items() if model_weight == max_model_weight]
-            # 4. if still more than one candidate block, pick one randomly
-            for candidate in candidates:
-                picked_block = received_validators_to_blocks[candidate]
-                # check block hash match
-                if self.check_last_block_hash_match(picked_block):
-                    print(f"\n{self.role} {self.idx} ({self._user_labels}) picks {candidate}'s ({idx_to_device[candidate]._user_labels}) block.")
-                    return picked_block
-        return None
+        received_validatorspos_book = {block.produced_by: self.pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
+        if not received_validatorspos_book:
+            print(f"\n{self.idx} has no valid-received block. Resync chain next round.")
+            return picked_block
+        top_stake = max(received_validatorspos_book.values())
+        candidates = [validator for validator, stake in received_validatorspos_book.items() if stake == top_stake]
+        # if self.idx in candidates:
+        #     # oppourtunistic validator
+        #     winning_validator = self.idx
+        # else:
+        # get the winning validator, forking happens here
+        # 1. if more than one candidate block, pick the one that rewards itself the most
+        if len(candidates) > 1:
+            val_to_reward = {validator: received_validators_to_blocks[validator].device_to_reward[self.idx] for validator in candidates}
+            max_reward = max(val_to_reward.values())
+            candidates = [validator for validator, reward in val_to_reward.items() if reward == max_reward]
+        # 2. if more than one candidate block, pick the one whose global model has the best accuracy on device's local data
+        if len(candidates) > 1:
+            val_to_acc = {validator: self.eval_model_by_train(received_validators_to_blocks[validator].global_model) for validator in candidates}
+            max_acc = max(val_to_acc.values())
+            candidates = [validator for validator, acc in val_to_acc.items() if acc == max_acc]
+        # 3. if still more than one candidate block, pick the one whose global model gave this device most weight
+        if len(candidates) > 1:
+            block_to_its_model_weight = {}
+            for validator in candidates:
+                block = received_validators_to_blocks[validator]
+                worker_to_agg_acc_diff = defaultdict(float)
+                worker_to_agg_euc_dist = defaultdict(float)
+                worker_to_agg_direction_percent = defaultdict(float)
+                worker_to_agg_mask_overlap_percent = defaultdict(float)
+                worker_to_model_weight = defaultdict(float)
+                for validator_idx, validator_tx in block.validator_txs.items():
+                    # verify block producer's self reported accuracy
+                    validator_power = (self.pos_book[validator_idx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in block.validator_txs])
+                    for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items():
+                        worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power
+                    for worker_idx, direction_percent in validator_tx['worker_to_direction_percent'].items():
+                        worker_to_agg_direction_percent[worker_idx] += direction_percent * validator_power
+                    for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
+                        worker_to_agg_acc_diff[worker_idx] += worker_acc_diff * validator_power
+                    for worker_idx, mask_overlap_percent in validator_tx['worker_to_mask_overlap_percent'].items():
+                        worker_to_agg_mask_overlap_percent[worker_idx] += mask_overlap_percent * validator_power
+                for worker in worker_to_agg_acc_diff:
+                    worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_direction_percent[worker] + worker_to_agg_mask_overlap_percent[worker]
+                worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
+                block_to_its_model_weight[validator] = worker_to_model_weight[self.idx]
+            max_model_weight = max(block_to_its_model_weight.values())
+            candidates = [validator for validator, model_weight in block_to_its_model_weight.items() if model_weight == max_model_weight]
+        # 4. if still more than one candidate block, pick one randomly
+        winning_validator = random.choice(candidates)
+       
+        # winning_validator = max(validator_to_stake_criterion, key=validator_to_stake_criterion.get)        
+
+        print(f"\n{self.role} {self.idx} ({self._user_labels}) picks {winning_validator}'s ({idx_to_device[winning_validator]._user_labels}) block.")
+
+        return received_validators_to_blocks[winning_validator]
 
     def check_block_when_resyncing(self, block, last_block):
         # 1. check block signature
