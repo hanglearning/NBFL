@@ -191,7 +191,7 @@ class Client():
         print(f"Pruned model before and after accuracy: {init_model_acc:.2f}, {after_pruning_acc:.2f}")
         print(f"Pruned amount: {after_pruned_ratio - init_pruned_ratio:.2f}")
 
-        logger['pruned_amount'][comm_round][self.idx] = after_pruned_ratio - init_pruned_ratio
+        logger['worker_pruned_amount'][comm_round][self.idx] = after_pruned_ratio - init_pruned_ratio
         logger['after_prune_sparsity'][comm_round][self.idx] = 1 - after_pruned_ratio
         logger['after_prune_acc'][comm_round][self.idx] = after_pruning_acc
         logger['after_prune_local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)

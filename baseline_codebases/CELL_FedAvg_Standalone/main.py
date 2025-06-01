@@ -197,7 +197,7 @@ if __name__ == "__main__":
     logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
 
     logger["validator_to_worker_acc_diff"] = {r: {} for r in range(1, args.rounds + 1)}
-    logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["worker_pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
 
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
