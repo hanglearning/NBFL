@@ -105,7 +105,7 @@ parser.add_argument('--top_percent_winning', type=int, default=0.3,
 ####################### debug setting #######################
 parser.add_argument('--show_all_validation_performance', type=int, default=0, help='0 - do not show, 1 - show the validation performance of EVERY validator against the malicious devices in produce_global_model_and_reward()')
 parser.add_argument('--show_validation_performance_in_block', type=int, default=1, help='0 - do not show, 1 - show the validation performance against the malicious devices in its block')
-parser.add_argument('--save_devices_objects__each_round_for_debug', type=int, default=1, help='about 4.4M per device with one block. 0 - do not save, 1 - save')
+parser.add_argument('--save_devices_objects_each_round_for_debug', type=int, default=0, help='about 4.4M per device with one block. 0 - do not save, 1 - save')
 
 ####################### other settings #######################
 parser.add_argument('--save_init_global_model', type=int, default=0, help='0 - do not save, 1 - save')
@@ -226,13 +226,15 @@ def main():
     logger['forking_event'] = {r: 0 for r in range(1, args.rounds + 1)}
     logger['malicious_winning_count'] = {r: 0 for r in range(1, args.rounds + 1)}
 
+    logger["picked_winning_block"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["pos_book"] = {r: {} for r in range(1, args.rounds + 1)}
 
     logger["validator_to_worker_acc_diff"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["validator_to_worker_to_euc_dist"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["validator_to_worker_to_mask_overlap_percent"] = {r: {} for r in range(1, args.rounds + 1)}
     logger["validator_to_worker_to_top_grad_magnitudes_overlap_percent"] = {r: {} for r in range(1, args.rounds + 1)}
-    logger["pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["worker_pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
+    logger["val_post_pruned_amount"] = {r: {} for r in range(1, args.rounds + 1)}
     
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
@@ -347,7 +349,7 @@ def main():
             # validator produces global model
             validator.produce_global_model_and_reward(idx_to_device, comm_round, logger)
             # validator post prune the global model
-            validator.validator_post_prune()
+            validator.validator_post_prune(comm_round, logger)
             # validator produce block
             validator.produce_block()
             # validator broadcasts block
@@ -359,7 +361,7 @@ def main():
             # receive blocks from validators
             device.receive_blocks(online_validators)
             # pick winning block based on pos
-            winning_block = device.pick_winning_block(idx_to_device)
+            winning_block = device.pick_winning_block( comm_round, logger, idx_to_device)
             if not winning_block:
                 print(f"Device {device.idx} has no valid winning_block found (could be due to hash conflict), perform chain_resync next round")
                 continue
@@ -411,7 +413,7 @@ def main():
         with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
             pickle.dump(logger, f)
 
-        if args.save_devices_objects__each_round_for_debug:
+        if args.save_devices_objects_each_round_for_debug:
             with open(f'{args.log_dir}/idx_to_device_round_{comm_round}.pickle', 'wb') as f:
                 pickle.dump(idx_to_device, f)
 

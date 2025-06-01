@@ -236,7 +236,7 @@ class Device():
         print(f"Pruned model before and after accuracy: {init_model_acc:.2f}, {after_pruning_acc:.2f}")
         print(f"Pruned amount: {after_pruned_ratio - init_pruned_ratio:.2f}")
 
-        logger['pruned_amount'][comm_round][self.idx] = after_pruned_ratio - init_pruned_ratio
+        logger['worker_pruned_amount'][comm_round][self.idx] = after_pruned_ratio - init_pruned_ratio
         logger['after_prune_sparsity'][comm_round][self.idx] = 1 - after_pruned_ratio
         logger['after_prune_acc'][comm_round][self.idx] = after_pruning_acc
         logger['after_prune_local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
@@ -568,7 +568,7 @@ class Device():
         # produce final global model
         self._final_global_model = weighted_fedavg(worker_to_model_weight, worker_to_model, device=self.args.dev_device)
 
-    def validator_post_prune(self): # prune by the weighted average of the pruned amount of the selected models
+    def validator_post_prune(self, comm_round, logger): # prune by the weighted average of the pruned amount of the selected models
 
         init_pruned_ratio = get_pruned_ratio(self._final_global_model) # pruned_ratio = 0s/total_params = 1 - sparsity
         
@@ -612,6 +612,8 @@ class Device():
                         amount=to_prune_amount,
                         name='weight',
                         verbose=self.args.prune_verbose)
+
+        logger["val_post_pruned_amount"][comm_round][self.idx] = need_pruned_ratio - init_pruned_ratio
 
         print(f"{L_or_M} Validator {self.idx} has pruned {need_pruned_ratio - init_pruned_ratio:.2f} of the model. Final sparsity: {1 - need_pruned_ratio:.2f}.\n")
 
@@ -866,7 +868,7 @@ class Device():
                 self.update_peers(validator.peers)
                 self._received_blocks[validator.idx] = validator.produced_block
 
-    def pick_winning_block(self, idx_to_device):
+    def pick_winning_block(self, comm_round, logger, idx_to_device):
 
         # NOTE - if change logic of pick_winning_block(), also need to change logic in resync_chain(), validate_chain() and check_resync_eligibility_when_picking()
 
@@ -935,7 +937,8 @@ class Device():
         # winning_validator = max(validator_to_stake_criterion, key=validator_to_stake_criterion.get)        
 
         print(f"\n{self.role} {self.idx} ({self._user_labels}) picks {winning_validator}'s ({idx_to_device[winning_validator]._user_labels}) block.")
-
+        logger["picked_winning_block"][comm_round][self.idx] = winning_validator
+        
         return received_validators_to_blocks[winning_validator]
 
     def check_block_when_resyncing(self, block, last_block):
