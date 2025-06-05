@@ -107,7 +107,7 @@ class Device():
             if self.attack_type == 3:
                 attack_type = 'Lazy'
         
-        print(f"\n---------- {L_or_M} {attack_type} Worker:{self.idx} {self._user_labels} Train to Max Acc Update ---------------------")
+        print(f"\n---------- {L_or_M} {attack_type} Worker:{self.idx} Train to Max Acc Update ---------------------")
         if comm_round > 1 and self.args.rewind:
         # reinitialize model with initial params
             source_params = dict(self.init_global_model.named_parameters())
@@ -987,7 +987,7 @@ class Device():
        
         # winning_validator = max(validator_to_stake_criterion, key=validator_to_stake_criterion.get)        
 
-        print(f"\n{self.role} {self.idx} ({self._user_labels}) picks {winning_validator}'s ({idx_to_device[winning_validator]._user_labels}) block.")
+        print(f"\n{self.role} {self.idx} picks {winning_validator}'s block.")
         logger["picked_winning_block"][comm_round][self.idx] = winning_validator
         
         return received_validators_to_blocks[winning_validator]

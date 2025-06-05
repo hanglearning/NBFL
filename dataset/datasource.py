@@ -88,21 +88,22 @@ def iid_split(n_clients,
                                                              sampler=torch.utils.data.SubsetRandomSampler(
                                                                  idx),
                                                              batch_size=batch_size, num_workers=dataloader_workers))
-    user_labels = []
+    user_label_to_qty = {}
     for i, loader in enumerate(user_train_loaders):
         labels = []
         for batch in loader:
             _, targets = batch
             labels.extend(targets.numpy().tolist())
         unique_labels = sorted(list(set(labels)))
-        user_labels.append(unique_labels)
+        # user_labels.append(unique_labels)
         class_counts = np.bincount(np.array(labels), minlength=10)
         msg = f"Device {i + 1} label distribution: {dict(enumerate(class_counts))}"
         with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
             f.write(f"{msg}\n")
         print(msg)
+        user_label_to_qty[i] = dict(enumerate(class_counts))
     global_test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=dataloader_workers)
-    return user_train_loaders, user_test_loaders, user_labels, global_test_loader
+    return user_train_loaders, user_test_loaders, user_label_to_qty, global_test_loader
 
 
 def get_data_noniid_cifar10(n_devices, n_labels, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1):
@@ -229,7 +230,8 @@ def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_siz
                     idx_batch[device_id].append(idx_by_class[label].pop())
                     if len(idx_batch[device_id]) == total_samples:
                         break
-
+    
+    user_label_to_qty = {}
     train_loaders, test_loaders = [], []
     for i, idx in enumerate(idx_batch):
         sampler_train = torch.utils.data.SubsetRandomSampler(idx)
@@ -249,6 +251,7 @@ def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_siz
         loader_test = torch.utils.data.DataLoader(test_data, sampler=sampler_test, batch_size=batch_size, num_workers=dataloader_workers)
         test_loaders.append(loader_test)
 
+        user_label_to_qty[i] = dict(enumerate(class_counts))
     global_test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=dataloader_workers)
 
-    return train_loaders, test_loaders, user_labels, global_test_loader
+    return train_loaders, test_loaders, user_label_to_qty, global_test_loader

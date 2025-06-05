@@ -21,7 +21,7 @@ import gzip
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 import torch
 
 from sklearn.preprocessing import normalize
@@ -706,3 +706,60 @@ def check_converged(accuracies, threshold=0.05, window=3):
 
     recent_values = accuracies[-window:]
     return np.std(recent_values) < threshold
+
+def plot_device_class_distribution(user_labels, log_path):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import os
+
+    os.makedirs(log_path, exist_ok=True)
+
+    device_ids = sorted(user_labels.keys())
+    num_devices = len(device_ids)
+    num_classes = 10
+
+    # Initialize matrices
+    distribution_matrix = np.zeros((num_devices, num_classes))
+    raw_counts = np.zeros((num_devices, num_classes), dtype=int)
+
+    for i, dev in enumerate(device_ids):
+        label_dist = user_labels[dev]
+        for label in range(num_classes):
+            count = label_dist.get(label, 0)
+            raw_counts[i, label] = count
+            distribution_matrix[i, label] = count
+
+    # Normalize for proportions
+    row_sums = distribution_matrix.sum(axis=1, keepdims=True)
+    distribution_matrix = np.divide(distribution_matrix, row_sums, out=np.zeros_like(distribution_matrix), where=row_sums != 0)
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    left = np.zeros(num_devices)
+    colors = plt.cm.tab10(np.arange(num_classes))
+
+    for label in range(num_classes):
+        bar = ax.barh(np.arange(num_devices), distribution_matrix[:, label], left=left,
+                      color=colors[label], label=str(label), height=1.0)
+
+        for i, rect in enumerate(bar):
+            count = raw_counts[i, label]
+            if count > 0:
+                ax.text(left[i] + distribution_matrix[i, label] / 2,
+                        i,
+                        str(count),
+                        va='center',
+                        ha='center',
+                        fontsize=8,
+                        color='white' if distribution_matrix[i, label] > 0.15 else 'black')
+        left += distribution_matrix[:, label]
+
+    ax.set_yticks(np.arange(num_devices))
+    ax.set_yticklabels([f"Device {i + 1}" for i in device_ids])
+    ax.set_xticks([])
+    ax.set_title("Label Distribution")
+    ax.set_ylabel("Devices")
+    ax.set_xlabel("Proportion")
+    ax.legend(title="Label", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(f"{log_path}/device_label_distribution.png")
+    plt.close()

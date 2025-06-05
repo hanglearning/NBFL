@@ -38,7 +38,7 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_devices", "20", "--n_malicious", "10", "--attack_type", "4", "--seed", "50", "--epochs", "100", "--total_samples", "200", "--alpha", "0.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--dataset_mode", "iid"]
+            "args": ["--n_devices", "20", "--n_malicious", "10", "--attack_type", "4", "--seed", "50", "--epochs", "100", "--total_samples", "200", "--alpha", "10.0", "--acc_drop_threshold", "0.05", "--peer_percent", "1", "--dataset_mode", "non-iid"]
         },
         {
             "name": "LotteryFL debug run",

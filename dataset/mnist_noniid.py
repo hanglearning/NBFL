@@ -57,7 +57,6 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_devices, total_samples, alp
 
         # assign training samples
         user_labels = list(set(np.random.choice(10, num_classes, replace=False)))
-        dict_users_labels[i] = user_labels
         label_to_qty = {}
         assigned_counts = {label: 0 for label in user_labels}
         
@@ -76,9 +75,9 @@ def mnist_extr_noniid(train_dataset, test_dataset, n_devices, total_samples, alp
         with open(f'{log_dirpath}/dataset_assigned.txt', 'a') as f:
             f.write(f'{display_text}\n')
         print(display_text)
-
-        selected_labels = [label for label in assigned_counts if assigned_counts[label] > 0]
         
+        dict_users_labels[i] = label_to_qty
+
         for l in user_labels:
             dict_users_test[i] = np.concatenate(
                 (dict_users_test[i], idxs_test_splits[int(l)]), axis=0)
