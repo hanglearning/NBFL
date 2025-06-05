@@ -13,7 +13,7 @@ attack_type_map = {0: 'No Attack', 1: 'Poison Attack', 2: 'Label Flipping Attack
 #         for alpha in [1.0, 100.0]:
 for attack_type in [0, 4]:
     for mal in [0, 3, 6, 9, 10]:
-        for alpha in [1.0, 100.0]:
+        for alpha in [1.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
             
