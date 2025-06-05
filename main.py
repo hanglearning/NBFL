@@ -206,6 +206,9 @@ def main():
                 device._train_loader.dataset.targets = 9 - device._train_loader.dataset.targets
         idx_to_device[i] = device
     
+    # draw visualization of device class distribution
+    plot_device_class_distribution(user_labels, args.log_dir)
+
     devices_list = list(idx_to_device.values())
     for device in devices_list:
         device.assign_peers(idx_to_device)
