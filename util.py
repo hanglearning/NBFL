@@ -707,7 +707,7 @@ def check_converged(accuracies, threshold=0.05, window=3):
     recent_values = accuracies[-window:]
     return np.std(recent_values) < threshold
 
-def plot_device_class_distribution(user_labels, log_path):
+def plot_device_class_distribution(dataset_name, user_labels, log_path):
     import matplotlib.pyplot as plt
     import numpy as np
     import os
@@ -756,7 +756,7 @@ def plot_device_class_distribution(user_labels, log_path):
     ax.set_yticks(np.arange(num_devices))
     ax.set_yticklabels([f"Device {i + 1}" for i in device_ids])
     ax.set_xticks([])
-    ax.set_title("Label Distribution")
+    ax.set_title(f"{dataset_name.upper()} Label Distribution")
     ax.set_ylabel("Devices")
     ax.set_xlabel("Proportion")
     ax.legend(title="Label", bbox_to_anchor=(1.05, 1), loc='upper left')

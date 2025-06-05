@@ -137,7 +137,7 @@ def main():
     print(f"Using device {args.dev_device}")
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LBFL_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}"
+    log_root_name = f"LBFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}"
 
     ######## initiate global model ########
     init_global_model = create_init_model(cls=models[args.dataset]
@@ -207,7 +207,7 @@ def main():
         idx_to_device[i] = device
     
     # draw visualization of device class distribution
-    plot_device_class_distribution(user_labels, args.log_dir)
+    plot_device_class_distribution(args.dataset, user_labels, args.log_dir)
 
     devices_list = list(idx_to_device.values())
     for device in devices_list:
