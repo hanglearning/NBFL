@@ -53,6 +53,7 @@ class Device():
         self._received_blocks = {}
         self._resync_to = None # record the last round's picked winning validator to resync chain
         self.verified_winning_block = None
+        # self.volunteer_to_be_validator_next_round = False
         # for workers
         self._worker_tx = None
         self.layer_to_model_sig_row = {}
@@ -347,8 +348,6 @@ class Device():
         # v_grad = get_local_model_flattened_gradients(latest_block_global_model, self.model)
         g_acc = self.eval_model_by_train(latest_block_global_model)
 
-        worker_to_entropy = {}
-
         for widx, wtx in self._verified_worker_txs.items():
             worker_model = wtx['model']
             # calculate accuracy by validator's local dataset
@@ -361,18 +360,13 @@ class Device():
             # calculate overlapping mask percent as part of the effort to favor similiar updates and penalize noisy and lazy workers
             self.worker_to_mask_overlap_percent[widx] = calc_overlapping_mask_percent(latest_block_global_model, self.model, worker_model) # verifiable by other validators
             self.worker_to_top_grad_magnitudes_overlap_percent[widx] = calc_top_overlapping_gradient_magnitude_percent(latest_block_global_model, self.model, worker_model, self.args.top_overlapping_percent)
-        # self reported accuracy = sum of other validated workers' accuracies * (self's pos / sum of all pos)
-        self_pos_weight = 0
-        if sum(self.pos_book.values()) != 0:
-            self_pos_weight = self.pos_book[self.idx] / sum(self.pos_book.values()) # allow 0 in the first round
-        self.worker_to_acc_diff[self.idx] = (sum(self.worker_to_acc_diff.values()) - self.worker_to_acc_diff[self.idx])* self_pos_weight
 
-        print(f"Validator {self.idx}:")
-        print("eu_dist", {k: v for k, v in sorted(self.worker_to_euc_dist.items(), key=lambda item: item[1])})
-        print("acc_diff", {k: v for k, v in sorted(self.worker_to_acc_diff.items(), key=lambda item: item[1])})
-        print("direction_percent", {k: v for k, v in sorted(self.worker_to_direction_percent.items(), key=lambda item: item[1])})
-        print("mask_overlap_percent", {k: v for k, v in sorted(self.worker_to_mask_overlap_percent.items(), key=lambda item: item[1])})
-        print("top_grad_magnitudes_overlap_percent", {k: v for k, v in sorted(self.worker_to_top_grad_magnitudes_overlap_percent.items(), key=lambda item: item[1])})
+        # print(f"Validator {self.idx}:")
+        # print("eu_dist", {k: v for k, v in sorted(self.worker_to_euc_dist.items(), key=lambda item: item[1])})
+        # print("acc_diff", {k: v for k, v in sorted(self.worker_to_acc_diff.items(), key=lambda item: item[1])})
+        # print("direction_percent", {k: v for k, v in sorted(self.worker_to_direction_percent.items(), key=lambda item: item[1])})
+        # print("mask_overlap_percent", {k: v for k, v in sorted(self.worker_to_mask_overlap_percent.items(), key=lambda item: item[1])})
+        # print("top_grad_magnitudes_overlap_percent", {k: v for k, v in sorted(self.worker_to_top_grad_magnitudes_overlap_percent.items(), key=lambda item: item[1])})
 
         if self._is_malicious and self.attack_type == 1:
             self_acc_diff = self.worker_to_acc_diff[self.idx]
@@ -389,13 +383,13 @@ class Device():
             self.worker_to_euc_dist[self.idx] = 0 # cannot cheat, fixed value
             self.worker_to_direction_percent[self.idx] = 1 # cannot cheat, fixed value, also the largest
             self.worker_to_mask_overlap_percent[self.idx] = self_mask_overlap_percent # cannot cheat, equal to its own pruning percentage over unpruned area, also the largest
-            self.worker_to_acc_diff[self.idx] = self_acc_diff # hard to cheat - need to report high accuracies for other workers as well
+            self.worker_to_acc_diff[self.idx] = self_acc_diff # cannot cheat, will be reconstructed by other validators
         
 
     def make_validator_tx(self):
          
         validator_tx = {
-            'validator_idx' : self.idx,
+            'vidx' : self.idx,
             'rsa_pub_key': self.return_rsa_pub_key(),
             'worker_to_acc_diff' : self.worker_to_acc_diff,
             'worker_to_euc_dist' : self.worker_to_euc_dist,
@@ -454,22 +448,22 @@ class Device():
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
         
         # remove invalid validator tx
-        invalid_validator_tx_idx = set()
-        for validator_idx, validator_tx in self._verified_validator_txs.items():
-            # verify validator's self reported accuracy
-            validator_pos_weight = 0
-            if sum(self.pos_book.values()) != 0:
-                validator_pos_weight = self.pos_book[validator_idx] / sum(self.pos_book.values())
-            if round(validator_tx['worker_to_acc_diff'][validator_idx], 10) != round((sum(validator_tx['worker_to_acc_diff'].values()) - validator_tx['worker_to_acc_diff'][validator_idx]) * validator_pos_weight, 10):
-                print(f"Validator {validator_idx}'s self reported accuracy is invalid or forking occured that caused PoS book inconsistent.")
-                invalid_validator_tx_idx.add(validator_idx)
-                continue
-        # remove invalid validator tx
-        for validator_idx in invalid_validator_tx_idx:
-            del self._verified_validator_txs[validator_idx]
+        # invalid_validator_tx_idx = set()
+        # for vidx, validator_tx in self._verified_validator_txs.items():
+        #     # verify validator's self reported accuracy
+        #     validator_pos_weight = 0
+        #     if sum(self.pos_book.values()) != 0:
+        #         validator_pos_weight = self.pos_book[vidx] / sum(self.pos_book.values())
+        #     if round(validator_tx['worker_to_acc_diff'][vidx], 10) != round((sum(validator_tx['worker_to_acc_diff'].values()) - validator_tx['worker_to_acc_diff'][vidx]) * validator_pos_weight, 10):
+        #         print(f"Validator {vidx}'s self reported accuracy is invalid or forking occured that caused PoS book inconsistent.")
+        #         invalid_validator_tx_idx.add(vidx)
+        #         continue
+        # # remove invalid validator tx
+        # for vidx in invalid_validator_tx_idx:
+        #     del self._verified_validator_txs[vidx]
 
-        for validator_idx, validator_tx in self._verified_validator_txs.items():
-            validator_power = (self.pos_book[validator_idx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in self._verified_validator_txs])
+        for vidx, validator_tx in self._verified_validator_txs.items():
+            validator_power = (self.pos_book[vidx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in self._verified_validator_txs])
             for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items(): 
                 worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power # if all validators are honest, the worker_to_euc_dist must be the same, but we don't know if a worker is dishonest, it can send different models to different validators, and validator may dishonestly calculate the distance value
                 worker_to_agg_euc_dist_for_reward[worker_idx] += euc_dist
@@ -487,7 +481,14 @@ class Device():
             for worker_idx, top_mag_overlap_percent in validator_tx['worker_to_top_grad_magnitudes_overlap_percent'].items():
                 worker_to_agg_top_mag_overlap_percent[worker_idx] += top_mag_overlap_percent * validator_power
                 worker_to_agg_top_mag_overlap_percent_for_reward[worker_idx] += top_mag_overlap_percent
-       
+
+        # reconsutrct validator's acc_diff
+        for vidx in self._verified_validator_txs:
+            worker_to_agg_acc_diff[vidx] = 0
+            other_validators = [v for v in self._verified_validator_txs if v != vidx]
+            for ov in other_validators:
+                validator_power = (self.pos_book[ov] + 1) / sum([self.pos_book[v] + 1 for v in other_validators])
+                worker_to_agg_acc_diff[vidx] += self._verified_validator_txs[ov]['worker_to_acc_diff'][vidx] * validator_power
 
         # assume euclidean distances form a normal distribution
         # medium is the mean of the distribution, the difference between medium and validator's distance is one standard deviation
@@ -501,7 +502,7 @@ class Device():
                 worker_to_agg_euc_dist_for_reward[worker_idx] = 0
 
         for worker in worker_to_agg_acc_diff:
-            worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_direction_percent[worker] + worker_to_agg_mask_overlap_percent[worker] + worker_to_agg_top_mag_overlap_percent[worker_idx]
+            worker_to_model_weight[worker] = worker_to_agg_acc_diff[worker] + worker_to_agg_euc_dist[worker] + worker_to_agg_mask_overlap_percent[worker] + worker_to_agg_top_mag_overlap_percent[worker_idx] # + worker_to_agg_direction_percent[worker] 
         # normalize weights to between 0 and 1
         worker_to_model_weight = {worker_idx: weight/sum(worker_to_model_weight.values()) for worker_idx, weight in worker_to_model_weight.items()}
 
@@ -519,15 +520,15 @@ class Device():
         # total = sum(worker_to_agg_mask_overlap_percent_for_reward.values())
         # worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent_for_reward.items()}
         
-        print(f"Validator {self.idx}:")
+        # print(f"Validator {self.idx}:")
         # print("eu_dist", {k: v for k, v in sorted(worker_to_agg_euc_dist.items(), key=lambda item: item[1])})
         # print("acc_diff", {k: v for k, v in sorted(worker_to_agg_acc_diff.items(), key=lambda item: item[1])})
-        print("direction_percent", {k: v for k, v in sorted(worker_to_agg_direction_percent.items(), key=lambda item: item[1])})
-        print("mask_overlap_percent", {k: v for k, v in sorted(worker_to_agg_mask_overlap_percent.items(), key=lambda item: item[1])})
-        print("top_mag_overlap_percent", {k: v for k, v in sorted(worker_to_agg_top_mag_overlap_percent.items(), key=lambda item: item[1])})
+        # print("direction_percent", {k: v for k, v in sorted(worker_to_agg_direction_percent.items(), key=lambda item: item[1])})
+        # print("mask_overlap_percent", {k: v for k, v in sorted(worker_to_agg_mask_overlap_percent.items(), key=lambda item: item[1])})
+        # print("top_mag_overlap_percent", {k: v for k, v in sorted(worker_to_agg_top_mag_overlap_percent.items(), key=lambda item: item[1])})
 
-        # for validator_idx, validator_tx in self._verified_validator_txs.items():
-        #     validator_power = self.pos_book[validator_idx] + 1
+        # for vidx, validator_tx in self._verified_validator_txs.items():
+        #     validator_power = self.pos_book[vidx] + 1
         #     for worker_idx, cos_sim in validator_tx['worker_to_cos_sim'].items():
         #         worker_to_agg_cos_sim[worker_idx] += cos_sim * validator_power
         
@@ -537,7 +538,7 @@ class Device():
         # worker_to_norm_cos_sim = {worker_idx: agg_cos_sim/sum(worker_to_agg_cos_sim.values()) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
 
         # rewarding mechanism
-        # for validator_idx, validator_tx in self._verified_validator_txs.items():
+        # for vidx, validator_tx in self._verified_validator_txs.items():
 
         worker_to_agg_acc_diff = {w: ad - min(worker_to_agg_acc_diff.values()) for w, ad in worker_to_agg_acc_diff.items()}
         # worker_to_agg_mask_overlap_percent = {w: mop - min(worker_to_agg_mask_overlap_percent.values()) for w, mop in worker_to_agg_mask_overlap_percent.items()}
@@ -549,7 +550,7 @@ class Device():
 
         worker_to_model_weight = {worker_idx: weight/sum(self._device_to_ungranted_reward.values()) for worker_idx, weight in self._device_to_ungranted_reward.items()}
         # self._device_to_ungranted_reward = deepcopy(worker_to_model_weight)
-        print("worker_to_model_weight", {k: v for k, v in sorted(worker_to_model_weight.items(), key=lambda item: item[1])})
+        # print("worker_to_model_weight", {k: v for k, v in sorted(worker_to_model_weight.items(), key=lambda item: item[1])})
 
         # DEBUG
         # print("V", self.idx, self._device_to_ungranted_reward)
@@ -682,13 +683,56 @@ class Device():
             for idx in block.device_to_reward:
                 self.pos_book[idx] += block.device_to_reward[idx]
 
+    def count_recent_wins(self, vidx, window):
+        """
+        Count how many blocks a validator has produced in the recent window.
+        
+        Args:
+            vidx: The ID of the validator to check
+            window: Number of recent blocks to check (from args.validator_window)
+        
+        Returns:
+            Number of blocks produced by this validator in the recent window
+        """
+        if self.blockchain.get_chain_length() == 0:
+            return 0
+        
+        # Check only the most recent 'window' blocks
+        start_idx = max(0, self.blockchain.get_chain_length() - window)
+        recent_wins = 0
+        
+        for i in range(start_idx, self.blockchain.get_chain_length()):
+            if self.blockchain.chain[i].produced_by == vidx:
+                recent_wins += 1
+        
+        return recent_wins
+
+    def get_validator_priority(self, vidx):
+        """
+        Calculate a validator's priority for block production based on stake and recent activity.
+        
+        Args:
+            vidx: The ID of the validator
+        
+        Returns:
+            Priority score (float) - higher is better
+        """
+        # Base stake
+        base_stake = self.pos_book[vidx]
+        
+        # Count recent wins
+        recent_wins = self.count_recent_wins(vidx, self.args.validator_window)
+        
+        # Simple penalty: divide by (1 + recent_wins)
+        # This gives a smooth decay: 1 win = 50% priority, 2 wins = 33%, etc.
+        priority = base_stake / (1 + recent_wins)
+        
+        return priority
+
     def check_resync_eligibility_when_picking(self, idx_to_device, winning_block):
         to_resync_chain = idx_to_device[self._resync_to].blockchain
         if to_resync_chain.get_chain_length() == 0:
             print(f"resync_to_device {self._resync_to}'s chain length is 0. Chain not resynced. Resync next round.") # may resync to the same device, but the device may have appended other blocks to make its chain valid at the beginning of the next round
-            return False
-        if len(to_resync_chain.chain) >= 1 and to_resync_chain.chain[-1].produced_by == winning_block.produced_by:
-            print(f"resync_to_device {self._resync_to}'s chain's last block's producer is identical to the winning_block's ({winning_block.produced_by}). To mitigate monopoly, chain not resynced. Resync next round.")  # the same validator cannot win two times consecutively - mitigate monopoly
             return False
         return True
     
@@ -768,9 +812,9 @@ class Device():
                 worker_to_agg_direction_percent = defaultdict(float)
                 worker_to_agg_mask_overlap_percent = defaultdict(float)
                 worker_to_model_weight = defaultdict(float)
-                for validator_idx, validator_tx in block.validator_txs.items():
+                for vidx, validator_tx in block.validator_txs.items():
                     # verify block producer's self reported accuracy
-                    validator_power = (self.pos_book[validator_idx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in block.validator_txs])
+                    validator_power = (self.pos_book[vidx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in block.validator_txs])
                     for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items():
                         worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power
                     for worker_idx, direction_percent in validator_tx['worker_to_direction_percent'].items():
@@ -817,9 +861,6 @@ class Device():
         blockchain_to_check = chain_to_check.get_chain()
         for i in range(1, len(blockchain_to_check)):
             if blockchain_to_check[i].previous_block_hash != blockchain_to_check[i-1].compute_hash():
-                return False
-            # if i >= 2 and blockchain_to_check[i].produced_by == blockchain_to_check[i-1].produced_by == blockchain_to_check[i-2].produced_by:
-            if i >= 1 and blockchain_to_check[i].produced_by == blockchain_to_check[i-1].produced_by:
                 return False
         return True
         
@@ -875,20 +916,21 @@ class Device():
         picked_block = None
 
         if not self._received_blocks:
-            print(f"\n{self.idx} has not received any block. Resync chain next round.")
+            print(f"\n{self.idx} has not received any block. Become validator next round.")
             return picked_block
         
         received_validators_to_blocks = {block.produced_by: block for block in self._received_blocks.values()}
-        # the same validator cannot win two times consecutively - mitigate monopoly
-        # if self.blockchain.get_chain_length() >= 2 and self.blockchain.chain[-1].produced_by == self.blockchain.chain[-2].produced_by:
-        if self.blockchain.get_chain_length() >= 1:
-            received_validators_to_blocks.pop(self.blockchain.chain[-1].produced_by, None)
-        received_validatorspos_book = {block.produced_by: self.pos_book[block.produced_by] for block in received_validators_to_blocks.values()}
-        if not received_validatorspos_book:
-            print(f"\n{self.idx} has no valid-received block. Resync chain next round.")
+        
+        # handle monopoly
+        val_priorities = {val: self.get_validator_priority(val) 
+                       for val in received_validators_to_blocks.keys()}
+        if not val_priorities:
+            print(f"\n{self.idx} has no valid-received block. Become validator next round.")
             return picked_block
-        top_stake = max(received_validatorspos_book.values())
-        candidates = [validator for validator, stake in received_validatorspos_book.items() if stake == top_stake]
+
+        top_priority = max(val_priorities.values())
+        candidates = [validator for validator, priority in val_priorities.items() 
+                    if priority == top_priority]
         # if self.idx in candidates:
         #     # oppourtunistic validator
         #     winning_validator = self.idx
@@ -931,8 +973,17 @@ class Device():
                 block_to_its_model_weight[validator] = worker_to_model_weight[self.idx]
             max_model_weight = max(block_to_its_model_weight.values())
             candidates = [validator for validator, model_weight in block_to_its_model_weight.items() if model_weight == max_model_weight]
-        # 4. if still more than one candidate block, pick one randomly
+        # 4. if still more than one candidate block, pick one randomly - no way to enforce the following actually
         winning_validator = random.choice(candidates)
+        # round - 1
+        # candidates.sort() # sort to make the pick deterministic-randomly
+        # if comm_round == 1:
+        #     model_weights_str = str(sorted(flatten_model_weights(self.init_global_model).tolist()))
+        #     hash_pick_index = int(sha256(model_weights_str.encode()).hexdigest()[-1:], 16) % len(candidates)
+        # else:
+        #     latest_block_hash = self.blockchain.get_last_block_hash()
+        #     hash_pick_index = int(latest_block_hash[-1:], 16) % len(candidates)
+        # winning_validator = candidates[hash_pick_index]
        
         # winning_validator = max(validator_to_stake_criterion, key=validator_to_stake_criterion.get)        
 
@@ -1004,15 +1055,15 @@ class Device():
         worker_to_agg_mask_overlap_percent_for_reward = defaultdict(float)
 
         latest_block_global_model_pruned_ratio = get_pruned_ratio(self.blockchain.get_last_block().global_model) if self.blockchain.get_chain_length() > 0 else 0
-        for validator_idx, validator_tx in winning_block.validator_txs.items():
+        for vidx, validator_tx in winning_block.validator_txs.items():
             # verify block producer's self reported accuracy
-            validator_pos_weight = 0
-            if sum(self.pos_book.values()) != 0:
-                validator_pos_weight = self.pos_book[validator_idx] / sum(self.pos_book.values())
-            if round(validator_tx['worker_to_acc_diff'][validator_idx], 10) != round((sum(validator_tx['worker_to_acc_diff'].values()) - validator_tx['worker_to_acc_diff'][validator_idx]) * validator_pos_weight, 10):
-                print(f"Validator {validator_idx}'s self reported accuracy is invalid in the winning block or forking occured that caused PoS book inconsistent. Block discarded.")
-                return False
-            validator_power = (self.pos_book[validator_idx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in winning_block.validator_txs])
+            # validator_pos_weight = 0
+            # if sum(self.pos_book.values()) != 0:
+            #     validator_pos_weight = self.pos_book[vidx] / sum(self.pos_book.values())
+            # if round(validator_tx['worker_to_acc_diff'][vidx], 10) != round((sum(validator_tx['worker_to_acc_diff'].values()) - validator_tx['worker_to_acc_diff'][vidx]) * validator_pos_weight, 10):
+            #     print(f"Validator {vidx}'s self reported accuracy is invalid in the winning block or forking occured that caused PoS book inconsistent. Block discarded.")
+            #     return False
+            validator_power = (self.pos_book[vidx] + 1) / sum([self.pos_book[participant_val] + 1 for participant_val in winning_block.validator_txs])
             for worker_idx, euc_dist in validator_tx['worker_to_euc_dist'].items():
                 worker_to_agg_euc_dist[worker_idx] += euc_dist * validator_power
                 worker_to_agg_euc_dist_for_reward[worker_idx] += euc_dist
@@ -1030,14 +1081,22 @@ class Device():
             for worker_idx, top_mag_overlap_percent in validator_tx['worker_to_top_grad_magnitudes_overlap_percent'].items():
                 worker_to_agg_top_mag_overlap_percent[worker_idx] += top_mag_overlap_percent * validator_power
 
-        # for validator_idx, validator_tx in winning_block.validator_txs.items():
-        #     validator_power = self.pos_book[validator_idx] + 1
+        # for vidx, validator_tx in winning_block.validator_txs.items():
+        #     validator_power = self.pos_book[vidx] + 1
         #     for worker_idx, cos_sim in validator_tx['worker_to_cos_sim'].items():
         #         worker_to_agg_cos_sim[worker_idx] += cos_sim * validator_power
         
         # worker_to_agg_cos_sim = {worker_idx: max(0, agg_cos_sim) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
 
         # worker_to_norm_cos_sim = {worker_idx: agg_cos_sim/sum(worker_to_agg_cos_sim.values()) for worker_idx, agg_cos_sim in worker_to_agg_cos_sim.items()}
+
+        # reconsutrct validator's acc_diff
+        for vidx in winning_block.validator_txs:
+            worker_to_agg_acc_diff[vidx] = 0
+            other_validators = [v for v in winning_block.validator_txs if v != vidx]
+            for ov in other_validators:
+                validator_power = (self.pos_book[ov] + 1) / sum([self.pos_book[v] + 1 for v in other_validators])
+                worker_to_agg_acc_diff[vidx] += winning_block.validator_txs[ov]['worker_to_acc_diff'][vidx] * validator_power
 
         validator_euc_dist = worker_to_agg_euc_dist[winning_block.produced_by]
         medium = np.median(list(worker_to_agg_euc_dist.values()))
@@ -1067,7 +1126,7 @@ class Device():
         # worker_to_norm_mask_overlap_percent = {worker_idx: (agg_mask_overlap_percent / total if total != 0 else 0) for worker_idx, agg_mask_overlap_percent in worker_to_agg_mask_overlap_percent_for_reward.items()}
 
         # rewarding mechanism
-        # for validator_idx, validator_tx in winning_block.validator_txs.items():
+        # for vidx, validator_tx in winning_block.validator_txs.items():
             # for worker_idx, worker_acc_diff in validator_tx['worker_to_acc_diff'].items():
             #     # worker_pruned_ratio = get_pruned_ratio(self._verified_worker_txs[worker_idx]['model'])
         worker_to_agg_acc_diff = {w: ad - min(worker_to_agg_acc_diff.values()) for w, ad in worker_to_agg_acc_diff.items()}

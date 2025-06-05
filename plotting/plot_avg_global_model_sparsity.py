@@ -9,8 +9,8 @@ y_axis_label = 'Sparsity'
 
 # for attack_type in [0, 4]:
 #     for mal in [0, 3, 6, 10]:
-for attack_type in [4]:
-    for mal in [3, 6, 9, 10]:
+for attack_type in [0, 4]:
+    for mal in [0, 3, 6, 9, 10]:
         for alpha in [1.0, 100.0]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
