@@ -279,8 +279,8 @@ class Device():
         # see receive_and_verify_worker_tx_sig()
         return
 
-    def volunteer_to_be_validator(self):
-        if self._is_malicious:
+    def volunteer_to_be_validator(self, all_mal_val):
+        if all_mal_val and self._is_malicious:
             return True
         sum_stake = sum(self.pos_book.values())
         if sum_stake == 0:
