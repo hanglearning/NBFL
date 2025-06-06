@@ -78,6 +78,8 @@ parser.add_argument('--validate_center_threshold', type=float, default=0.1, help
 parser.add_argument('--inverse_acc_weights', type=int, default=0, help='sometimes may inverse the accuracy weights to give more weights to minority workers. ideally, malicious workers should have been filtered out and not be considered here')
 parser.add_argument('--top_overlapping_percent', type=float, default=0.5, help='used to calculate the overlap percent of the model signature, which is used to determine the reward for pruning')
 parser.add_argument('--validator_window', type=int, default=5, help='Number of recent blocks to check for validator monopoly prevention')
+parser.add_argument('--all_mal_val', type=int, default=0, help='Set to 1 to make all malicious devices to be validators all the times to pressure test the validation mechanism')
+
 
 ####################### attack setting #######################
 parser.add_argument('--attack_type', type=int, default=0, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack, 4 - model poisoning and lazy attack')
@@ -327,7 +329,7 @@ def main():
             if worker.is_online():
                 # receive worker tx and verify signature
                 worker.receive_and_verify_worker_tx_sig(online_workers) # worker also receives other workers' tx due to verifying pruning reward
-                if worker.volunteer_to_be_validator():
+                if worker.volunteer_to_be_validator(args.all_mal_val):
                     worker.role = 'validator'
                     online_validators.append(worker)
         
