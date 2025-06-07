@@ -1,12 +1,3 @@
-# TODO - prevent free or lazy rider - 
-
-''' logger
-1. log latest model accuracy in test_indi_accuracy()
-2. log validation mechanism performance in check_validation_performance()
-3. log forking event at the end of main.py
-4. log pos book at the end of main.py
-5. log when a malicious block has been added by any device in the network 
-'''
 import os
 import torch
 import argparse
@@ -46,7 +37,7 @@ models = {
     }
 }
 
-parser = argparse.ArgumentParser(description='LBFL')
+parser = argparse.ArgumentParser(description='NBFL')
 
 ####################### system setting #######################
 parser.add_argument('--train_verbose', type=bool, default=False)
@@ -90,7 +81,6 @@ parser.add_argument('--target_sparsity', type=float, default=0.1, help='target s
 parser.add_argument('--max_prune_step', type=float, default=0.05, help='max increment of pruning step')
 parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
 parser.add_argument('--prune_acc_trigger', type=float, default=0.8, help='must achieve this accuracy to trigger worker to post prune its local model')
-# parser.add_argument('--validator_prune_acc_trigger', type=float, default=0.8, help='must achieve this accuracy to trigger validator to post prune the global model')
 parser.add_argument('--acc_stable_prune_rounds', type=int, default=3, help='number of max_accuracy-stable rounds to trigger pruning')
 
 
@@ -139,7 +129,7 @@ def main():
     print(f"Using device {args.dev_device}")
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LBFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}"
+    log_root_name = f"NBFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}"
 
     ######## initiate global model ########
     init_global_model = create_init_model(cls=models[args.dataset]
@@ -153,7 +143,7 @@ def main():
     try:
         # on Google Colab with Google Drive mounted
         import google.colab
-        args.log_dir = f"/content/drive/MyDrive/LBFL/{log_root_name}"
+        args.log_dir = f"/content/drive/MyDrive/NBFL/{log_root_name}"
     except:
         # local
         args.log_dir = f"{args.log_dir}/{log_root_name}"
@@ -246,7 +236,7 @@ def main():
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
         pickle.dump(args, f)
 
-    ######## LBFL ########
+    ######## NBFL ########
 
     for comm_round in range(1, args.rounds + 1):
         
@@ -283,14 +273,14 @@ def main():
             device._final_global_model = None
             device.produced_block = None 
             device.worker_to_model_sig = {}           
-            device.worker_to_acc_diff = {}
-            device.worker_to_euc_dist = {}
             device._device_to_ungranted_reward = defaultdict(float)
             device.worker_to_model_weight = {}
-            device.worker_to_direction_percent = {}
+            device.worker_to_acc_diff = {}
+            device.worker_to_euc_dist = {}
             device.worker_to_mask_overlap_percent = {}
+            device.worker_to_top_grad_magnitudes_overlap_percent = {}
             
-        ''' Device Starts LBFL '''
+        ''' Device Starts NBFL '''
 
         ''' Phase 1 - Worker Learning and Pruning '''
         # all online devices become workers in this phase
@@ -321,7 +311,6 @@ def main():
 
         ''' Phase 2 - Validators Model Validation and Exchange Votes '''
         # workers volunteer to become validators
-        # the probability of a worker to become a validator is proportional to its stake in its pos_book
         
         online_validators = []
         
@@ -338,7 +327,7 @@ def main():
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]
             # validate model based on accuracy
-            validator.validate_models(idx_to_device, comm_round)
+            validator.validate_models()
             # make validator transaction
             validator.make_validator_tx()
             # broadcast tx to all the validators
@@ -353,7 +342,7 @@ def main():
             # verify validator tx signature
             validator.receive_and_verify_validator_tx_sig(online_validators)
             # validator produces global model
-            validator.produce_global_model_and_reward(idx_to_device, comm_round, logger)
+            validator.produce_global_model_and_reward()
             # validator post prune the global model
             validator.validator_post_prune(comm_round, logger)
             # validator produce block
@@ -367,25 +356,25 @@ def main():
             # receive blocks from validators
             device.receive_blocks(online_validators)
             # pick winning block based on pos
-            winning_block = device.pick_winning_block( comm_round, logger, idx_to_device)
+            winning_block = device.pick_winning_block(comm_round, logger)
             if not winning_block:
                 print(f"Device {device.idx} has no valid winning_block found (could be due to hash conflict), perform chain_resync next round")
                 continue
             # check block
-            if not device.verify_winning_block(winning_block, comm_round, idx_to_device):
+            if not device.verify_winning_block_and_potential_resync(winning_block, comm_round, idx_to_device):
                 print(f"Device {device.idx}'s block check failed, perform chain_resync next round")
                 continue
         
         ''' Phase 5 - All Online Devices Process and Append Winning Block '''
         for device in online_workers:
             # append and process block
-            if not device.process_and_append_block(comm_round):
+            if not device.process_and_append_block():
                 continue
             # DEBUG - check performance of the validation mechanism
             if args.show_validation_performance_in_block:
                 device.check_validation_performance(idx_to_device, comm_round)
 
-        ''' End of LBFL '''
+        ''' End of NBFL '''
 
         ''' Evaluation '''
         ### record forking events ###
@@ -395,7 +384,7 @@ def main():
                 blocks_produced_by.add(device.blockchain.get_last_block().produced_by)
         logger['forking_event'][comm_round] = len(blocks_produced_by)
 
-        ### record validation accuracies ###
+        ### record validation values ###
         for device in init_online_devices:
             logger["validator_to_worker_acc_diff"][comm_round][device.idx] = deepcopy(device.worker_to_acc_diff)
             logger["validator_to_worker_to_euc_dist"][comm_round][device.idx] = deepcopy(device.worker_to_euc_dist)
@@ -406,7 +395,7 @@ def main():
         for device in devices_list:
             logger["pos_book"][comm_round][device.idx] = deepcopy(device.pos_book)
 
-        ### record when a winning block from a malicious validator is accepted in network ###
+        ### record the number of malicious winning block are accepted in network ###
         mal_blocks_produced_by = set()
         for device in init_online_devices:
             if device.has_appended_block:

@@ -83,7 +83,7 @@ if __name__ == "__main__":
     parser.add_argument('--CELL', type=int, default=0)
     parser.add_argument('--prune_step', type=float, default=0.15)
 
-    # LBFL needs
+    # NBFL needs
     parser.add_argument('--prune_acc_trigger', type=float, default=0.8, help='must achieve this accuracy to trigger worker to post prune its local model')
     parser.add_argument('--max_prune_step', type=float, default=0.05)
 
@@ -123,7 +123,7 @@ if __name__ == "__main__":
                                               alpha=args.alpha_dirichlet,
                                               dataloader_workers=args.num_workers)
             
-    # read init_global_model from file, which was generated from the LBFL run to ensure consistency
+    # read init_global_model from file, which was generated from the NBFL run to ensure consistency
     # Construct the file path
     file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f'../../logs/init_global_model_seed_{args.seed}.pth'))
 
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     state_dict = torch.load(file_path)
     init_global_model.load_state_dict(state_dict)
 
-    # pruned by 0.00 %. This is necessary to create buffer masks and to be consistent with create_model() in util.py of the LBFL codebase
+    # pruned by 0.00 %. This is necessary to create buffer masks and to be consistent with create_model() in util.py of the NBFL codebase
     l1_prune(init_global_model, amount=0.00, name='weight', verbose=False)
 
 

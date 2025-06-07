@@ -96,7 +96,7 @@ if __name__ == '__main__':
     global_model.train()
     print(global_model)
 
-    # read the init_global_model generated from LBFL
+    # read the init_global_model generated from NBFL
     state_dict = torch.load(f"logs/init_global_model_seed_{args.seed}.pth")
     global_model.load_state_dict(state_dict)
 

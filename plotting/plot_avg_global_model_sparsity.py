@@ -15,16 +15,16 @@ for attack_type in [0, 4]:
             if (attack_type == 0 and mal != 0) or (attack_type != 0 and mal == 0):
                 continue
             if attack_type == 0:
-                Standalone_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and "STANDALONE" in folder and f"alpha_{alpha}" in folder]
-                FedAvg_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and "FEDAVG" in folder and f"alpha_{alpha}" in folder]
-            LBFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
-            CELL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"malicious_{mal}" in folder and f"attack_{attack_type}" in folder and "CELL" in folder and f"alpha_{alpha}" in folder]
-            LotteryFL_log_paths = [f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"nmalicious_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
+                Standalone_log_paths = [f'{log_base_path}/NBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/NBFL/logs') if os.path.isdir(f'{log_base_path}/NBFL/logs/{folder}') and f"malicious_{mal}" in folder and "STANDALONE" in folder and f"alpha_{alpha}" in folder]
+                FedAvg_log_paths = [f'{log_base_path}/NBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/NBFL/logs') if os.path.isdir(f'{log_base_path}/NBFL/logs/{folder}') and f"malicious_{mal}" in folder and "FEDAVG" in folder and f"alpha_{alpha}" in folder]
+            NBFL_log_paths = [f'{log_base_path}/NBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/NBFL/logs') if os.path.isdir(f'{log_base_path}/NBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
+            CELL_log_paths = [f'{log_base_path}/NBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/NBFL/logs') if os.path.isdir(f'{log_base_path}/NBFL/logs/{folder}') and f"malicious_{mal}" in folder and f"attack_{attack_type}" in folder and "CELL" in folder and f"alpha_{alpha}" in folder]
+            LotteryFL_log_paths = [f'{log_base_path}/NBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/NBFL/logs') if os.path.isdir(f'{log_base_path}/NBFL/logs/{folder}') and f"nmalicious_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder]
             colors = ['red', 'blue', 'green', 'purple', 'orange'] if attack_type == 0 else ['red', 'purple', 'orange']
             
-            run_names = ['LBFL', 'Standalone', 'FedAvg', 'LotteryFL'] if attack_type == 0 else ['LBFL', 'LotteryFL']
+            run_names = ['NBFL', 'Standalone', 'FedAvg', 'LotteryFL'] if attack_type == 0 else ['NBFL', 'LotteryFL']
 
-            run_names = ['LBFL']
+            run_names = ['NBFL']
             for i, rn in enumerate(run_names):
                 vars()[f'{rn}_avg_values_over_runs'] = []
 
@@ -59,6 +59,6 @@ for attack_type in [0, 4]:
             attack_type_map = {0: 'No Attack', 1: 'Poison', 2: 'Label Flipping', 3: 'Lazy', 4: 'Poison & Lazy'}
             plt.title(f'{" ".join(logger_concerning.split('_')).title()} - {mal} Atkers - {attack_type_map[attack_type]}, α: {alpha}')
 
-            plt.savefig(f'{log_base_path}/LBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}.png', dpi=300)
+            plt.savefig(f'{log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}.png', dpi=300)
 
             plt.clf()
