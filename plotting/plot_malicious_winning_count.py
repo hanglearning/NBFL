@@ -18,9 +18,9 @@ for attack_type in [0, 4]:
                 continue
             
             # across different seeds
-            LBFL_log_paths = sorted([f'{log_base_path}/LBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/LBFL/logs') if os.path.isdir(f'{log_base_path}/LBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder], reverse=True)
+            NBFL_log_paths = sorted([f'{log_base_path}/NBFL/logs/{folder}' for folder in os.listdir(f'{log_base_path}/NBFL/logs') if os.path.isdir(f'{log_base_path}/NBFL/logs/{folder}') and f"mal_{mal}" in folder and f"attack_{attack_type}" in folder and f"alpha_{alpha}" in folder], reverse=True)
 
-            for lp in LBFL_log_paths:
+            for lp in NBFL_log_paths:
                 # Open and load the pickle file
                 with open(f'{lp}/logger.pickle', 'rb') as file:
                     logger = pickle.load(file)['malicious_winning_count']
@@ -45,6 +45,6 @@ plt.yticks(range(len(y_axis_labels)), y_axis_labels)
 
 plt.tight_layout()
 
-plt.savefig(f'{log_base_path}/LBFL/logs/malicious_winning_count.png', dpi=300)
+plt.savefig(f'{log_base_path}/NBFL/logs/malicious_winning_count.png', dpi=300)
 plt.clf()
 # plt.show()
