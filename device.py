@@ -3,12 +3,6 @@ import numpy as np
 from util import *
 from util import train as util_train
 from util import test_by_data_set
-from pathlib import Path
-from sklearn.cluster import KMeans
-from sklearn.cluster import DBSCAN
-from sklearn.metrics.pairwise import cosine_similarity
-from scipy.stats import entropy
-
 
 from copy import copy, deepcopy
 from Crypto.PublicKey import RSA
@@ -19,8 +13,6 @@ import random
 import math
 
 from collections import defaultdict
-from torch.utils.data import DataLoader
-
 
 class Device():
     def __init__(

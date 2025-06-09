@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "plot_all",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/plotting/plot_all.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
             "name": "CELL",
             "type": "python",
             "request": "launch",
