@@ -125,6 +125,9 @@ def main():
     if not args.attack_type:
         args.n_malicious = 0
     
+    if args.dataset_mode == 'iid':
+        args.alpha = '∞'
+    
     args.dev_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     print(f"Using device {args.dev_device}")
 
