@@ -5,14 +5,11 @@ import pickle
 import math
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from sklearn import metrics as skmetrics
 import numpy as np
 from tqdm import tqdm
 from tabulate import tabulate
 from torchmetrics import MetricCollection, Accuracy, Precision, Recall
 import torch.nn.utils.prune as prune
-import io
 from torch.utils.data import DataLoader
 from typing import List, Tuple, Dict, Union
 from torch.nn import functional as F
@@ -21,21 +18,10 @@ import gzip
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from collections import defaultdict, Counter
+from collections import defaultdict
 import torch
 
 from sklearn.preprocessing import normalize
-
-class AddGaussianNoise(object):
-	def __init__(self, mean=0., std=1.):
-		self.std = std
-		self.mean = mean
-		
-	def __call__(self, tensor):
-		return tensor + torch.randn(tensor.size()) * self.std + self.mean
-	
-	def __repr__(self):
-		return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
 
 
 def get_prune_params(model, name='weight') -> List[Tuple[nn.Parameter, str]]:
@@ -160,21 +146,6 @@ def weighted_fedavg(worker_to_weight, worker_to_model, device='cuda:0'):
 				model_params[i][name].data, weights[i])
 			param.data.copy_(param.data + weighted_param)
 	return aggr_model
-
-def apply_local_mask(model, mask):
-	# apply mask in-place to model
-	# direct multiplying instead of adding mask object
-	if not mask:
-		return
-	for layer, module in model.named_children():
-		for name, weight_params in module.named_parameters():
-			if 'weight' in name:
-				weight_params.data.copy_(torch.tensor(np.multiply(weight_params.data, mask[layer])))
-
-
-def create_model_no_prune(cls, device='cuda:0') -> nn.Module:
-	model = cls().to(device)
-	return model
 
 def create_init_model(cls, device='cuda:0') -> nn.Module:
 	model = cls().to(device)
@@ -374,24 +345,7 @@ def get_num_total_model_params(model):
 		if 'weight' in layer_name:
 			total_num_model_params += params.numel()
 	return total_num_model_params    
-
-def get_model_sig_sparsity(model, model_sig):
-	total_num_model_params = get_num_total_model_params(model)
-	total_num_sig_non_0_params = 0
-	for layer, layer_sig in model_sig.items():
-		if layer_sig.is_cuda:
-			total_num_sig_non_0_params += len(list(zip(*np.where(layer_sig.cpu()!=0))))
-		else:
-			total_num_sig_non_0_params += len(list(zip(*np.where(layer_sig!=0))))
-	return total_num_sig_non_0_params / total_num_model_params
-
-def generate_mask_from_0_weights(model):
-	params_to_prune = get_prune_params(model)
-	for param, name in params_to_prune:
-		weights = getattr(param, name)
-		mask_amount = torch.eq(weights.data, 0.00).sum().item()
-		prune.l1_unstructured(param, name, amount=mask_amount)
-		
+	
 def make_prune_permanent(model): # in place and also return the model
 	if check_mask_object_from_model(model):
 		params_pruned = get_prune_params(model, name='weight')
@@ -406,20 +360,6 @@ def check_mask_object_from_model(model):
 				return True
 	return False
 
-
-def get_model_weights(model):
-	"""
-	Args:
-		model (_torch model_): NN Model
-
-	Returns:
-		layer_to_param _dict_: you know!
-	"""
-	layer_to_param = {} 
-	for layer_name, param in model.named_parameters():
-		if 'weight' in layer_name:
-			layer_to_param[layer_name.split('.')[0]] = param.cpu().detach().numpy()
-	return layer_to_param
 
 def flatten_model_weights(model):
 	weights = []
@@ -450,111 +390,6 @@ def calc_mask_from_model_without_mask_object(model):
 				layer_to_mask[layer] = np.ones_like(weight_params.cpu())
 				layer_to_mask[layer][weight_params.cpu() == 0] = 0
 	return {layer: layer_to_mask[layer] for layer in sorted(layer_to_mask.keys())} # make sure layers are always in order
-
-
-def generate_2d_top_magnitude_mask(model_path, percent, check_whole = False, keep_sign = False):
-
-	"""
-		returns 2d top magnitude mask.
-		1. keep_sign == True
-			it keeps the sign of the original weight. Used in introduce noise. 
-			returns mask with -1, 1, 0.
-		2. keep_sign == False
-			calculate absolute magitude mask. Used in calculating weight overlapping.
-			returns binary mask with 1, 0.
-	"""
-	
-	layer_to_mask = {}
-
-	with open(model_path, 'rb') as f:
-		nn_layer_to_weights = pickle.load(f)
-			
-	for layer, param in nn_layer_to_weights.items():
-	
-		# take abs as we show magnitude values
-		abs_param = np.absolute(param)
-
-		mask_2d = np.empty_like(abs_param)
-		mask_2d[:] = 0 # initialize as 0
-
-		base_size = abs_param.size if check_whole else abs_param.size - abs_param[abs_param == 0].size
-
-		top_boundary = math.ceil(base_size * percent)
-					
-		percent_threshold = -np.sort(-abs_param.flatten())[top_boundary]
-
-		# change top weights to 1
-		mask_2d[np.where(abs_param > percent_threshold)] = 1
-
-		# sanity check
-		# one_counts = (mask_2d == 1).sum()
-		# print(one_counts/param.size)
-
-		layer_to_mask[layer] = mask_2d
-		if keep_sign:
-			layer_to_mask[layer] *= np.sign(param)
-
-	# sanity check
-	# for layer in layer_to_mask:
-	#     print((layer_to_mask[layer] == 1).sum()/layer_to_mask[layer].size)
-
-	return layer_to_mask
-
-def calculate_overlapping_mask(model_paths, check_whole, percent, model_validation=False):
-	layer_to_masks = []
-
-	for model_path in model_paths:
-		layer_to_masks.append(generate_2d_top_magnitude_mask(model_path, percent, check_whole))
-
-	ref_layer_to_mask = layer_to_masks[0]
-
-	for layer_to_mask_iter in range(len(layer_to_masks[1:])):
-		layer_to_mask = layer_to_masks[1:][layer_to_mask_iter]
-		for layer, mask in layer_to_mask.items():
-			ref_layer_to_mask[layer] *= mask
-			if check_whole:
-				# for debug - when each local model has high overlapping with the last global model, why the overlapping ratio for all local models seems to be low?
-				if model_validation: # called by model_validation()
-					print(f"Worker {model_paths[-1].split('/')[-2]}, layer {layer} - overlapping ratio on top {percent:.2%} is {(ref_layer_to_mask[layer] == 1).sum()/ref_layer_to_mask[layer].size/percent:.2%}")
-				else:
-					print(f"iter {layer_to_mask_iter + 1}, layer {layer} - overlapping ratio on top {percent:.2%} is {(ref_layer_to_mask[layer] == 1).sum()/ref_layer_to_mask[layer].size/percent:.2%}")
-		print()
-
-	return ref_layer_to_mask
-
-def what_samples(dataloader):
-	'''
-		To debug data loader and see if correct number of the specified samples are loaded.
-		Sample Usage 1: what_samples(global_test_loader)
-		Sample Usage 2: for device in devices_list: what_samples(device._train_loader)
-	'''
-	label_counts = defaultdict(int)
-	for batch in dataloader:
-		# Assuming the labels are in the second element of the batch tuple
-		_, labels = batch
-		for label in labels:
-			label_counts[label.item()] += 1
-
-	# Print the label counts
-	total = 0
-	for label, count in label_counts.items():
-		print(f"Label {label}: {count} samples")
-		total += count
-	print("Total count", total)
-
-def subtract_nested_dicts(dict1, dict2):
-	# Get all unique keys from both outer dictionaries
-	outer_keys = set(dict1.keys()).union(set(dict2.keys()))
-	
-	result = {}
-	for outer_key in outer_keys:
-		result[outer_key] = {}
-		# Get all unique keys from both inner dictionaries
-		inner_keys = set(dict1.get(outer_key, {}).keys()).union(set(dict2.get(outer_key, {}).keys()))
-		for inner_key in inner_keys:
-			result[outer_key][inner_key] = dict1.get(outer_key, {}).get(inner_key, 0) - dict2.get(outer_key, {}).get(inner_key, 0)
-	
-	return result
 
 def calc_overlapping_mask_percent(latest_block_global_model, validator_model, worker_model):
     val_mask = calc_mask_from_model_with_mask_object(validator_model)
@@ -614,98 +449,6 @@ def calc_top_overlapping_gradient_magnitude_percent(latest_block_global_model, v
     # Calculate the overlapping percentage
     overlapping_mask_percent = len(same_positions) / num_top_elements
     return overlapping_mask_percent
-
-# def calc_updates_direction(w_grad, v_grad, latest_block_global_model_pruned_ratio):
-
-# 	# Calculate the sign of each element in the arrays
-# 	sign_w_grad = np.sign(w_grad)
-# 	sign_v_grad = np.sign(v_grad)
-
-# 	# Compare the signs and count the number of elements with the same sign
-# 	same_sign_count = np.sum(sign_w_grad == sign_v_grad)
-	
-# 	# Calculate the percentage of elements with the same sign
-# 	total_elements = w_grad.size
-# 	percent_same_sign = same_sign_count / total_elements - latest_block_global_model_pruned_ratio
-	
-# 	return percent_same_sign
-
-def calc_gradient_sign_alignment(worker_model, validator_model, latest_block_global_model):
-	
-	global_model_mask = calc_mask_from_model_without_mask_object(latest_block_global_model)
-	# Flatten the masks
-	global_model_mask = np.concatenate([tensor.flatten() for tensor in global_model_mask.values()])
-
-	worker_model_gradients = get_local_model_flattened_gradients(worker_model, latest_block_global_model)
-	validator_model_gradients = get_local_model_flattened_gradients(validator_model, latest_block_global_model)
-
-	# Identify positions where global_model_mask is 1
-	one_positions = np.nonzero(global_model_mask == 1)[0]
-
-	# Extract elements at these positions
-	worker_elements = worker_model_gradients[one_positions]
-	validator_elements = validator_model_gradients[one_positions]
-
-	sign_w_grad = np.sign(worker_elements)
-	sign_v_grad = np.sign(validator_elements)
-	same_sign_count = np.sum(sign_w_grad == sign_v_grad)
-
-	# Calculate sign alignment
-	total_positions = one_positions.size
-	alignment_percentage = same_sign_count / total_positions
-
-	return alignment_percentage
-
-
-def plotpos_book(pos_book, log_dir, comm_round, plot_diff=True):
-	'''
-		Debug the rewarding function to see if it rewards more to the 
-		legitimates and less to the maliciouses.
-		If not plot_diff, plot the current pos_book.
-	'''
-	os.makedirs(f'{log_dir}/pos_heat_maps/', exist_ok=True)
-	curpos_book = pos_book[comm_round]
-	if plot_diff and comm_round > 1:
-		# Get the previous pos_book
-		prevpos_book = pos_book[comm_round - 1]
-		# Calculate the difference between the current and previous pos_books
-		curpos_book = subtract_nested_dicts(curpos_book, prevpos_book)
-	# Convert the dictionary to a 2D array
-	rows = sorted(curpos_book.keys())
-	cols = sorted(curpos_book[rows[0]].keys())
-	array = [[curpos_book[row][col] for col in cols] for row in rows]
-
-	# Transpose the array to exchange rows and columns
-	transposed_array = list(map(list, zip(*array)))
-
-	# Generate the heat map
-	plt.figure(figsize=(16, 12))
-	sns.heatmap(transposed_array, annot=True, fmt=".4f", cmap='Reds', cbar=True, xticklabels=rows, yticklabels=cols)
-
-	# Add labels and title
-	plt.xlabel('Book Owner ID')
-	plt.ylabel('Device ID')
-	plt.title('POS Heat Map')
-
-	plt.savefig(f'{log_dir}/pos_heat_maps/pos_heat_map_round_{comm_round}.png')
-
-def check_converged(accuracies, threshold=0.05, window=3):
-    """
-    Check if the accuracies have converged using standard deviation.
-
-    Args:
-        accuracies (list): List of accuracy values.
-        threshold (float): Maximum standard deviation to consider as converged.
-        window (int): Number of recent values to consider.
-
-    Returns:
-        bool: True if converged, False otherwise.
-    """
-    if len(accuracies) < window:
-        return False  # Not enough data to check convergence
-
-    recent_values = accuracies[-window:]
-    return np.std(recent_values) < threshold
 
 def plot_device_class_distribution(dataset_name, user_labels, log_path):
     import matplotlib.pyplot as plt

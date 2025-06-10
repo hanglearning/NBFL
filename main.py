@@ -5,7 +5,6 @@ import pickle
 import random
 import warnings
 warnings.filterwarnings("ignore")
-from pathlib import Path
 from datetime import datetime
 from pytorch_lightning import seed_everything
 from collections import defaultdict
@@ -65,8 +64,6 @@ parser.add_argument('--n_malicious', type=int, default=8, help="number of malici
 
 ####################### validation and rewards setting #######################
 parser.add_argument('--pass_all_models', type=int, default=0, help='turn off validation and pass all models, used for debug or create baselines')
-parser.add_argument('--validate_center_threshold', type=float, default=0.1, help='only recognize malicious devices if the difference of two centers of KMeans exceed this threshold')
-parser.add_argument('--inverse_acc_weights', type=int, default=0, help='sometimes may inverse the accuracy weights to give more weights to minority workers. ideally, malicious workers should have been filtered out and not be considered here')
 parser.add_argument('--top_overlapping_percent', type=float, default=0.5, help='used to calculate the overlap percent of the model signature, which is used to determine the reward for pruning')
 parser.add_argument('--validator_window', type=int, default=5, help='Number of recent blocks to check for validator monopoly prevention')
 parser.add_argument('--all_mal_val', type=int, default=0, help='Set to 1 to make all malicious devices to be validators all the times to pressure test the validation mechanism')
@@ -92,11 +89,8 @@ parser.add_argument('--network_stability', type=float, default=1.0,
                     help='the odds a device can be reached')
 parser.add_argument('--malicious_always_online', type=int, default=1, 
                     help='1 - malicious devices are always online; 0 - malicious devices can be online or offline depending on network_stability')
-parser.add_argument('--top_percent_winning', type=int, default=0.3, 
-                    help='when picking the winning block, considering the validators having the stake within this top percent. see pick_winning_block()')
 
 ####################### debug setting #######################
-parser.add_argument('--show_all_validation_performance', type=int, default=0, help='0 - do not show, 1 - show the validation performance of EVERY validator against the malicious devices in produce_global_model_and_reward()')
 parser.add_argument('--show_validation_performance_in_block', type=int, default=1, help='0 - do not show, 1 - show the validation performance against the malicious devices in its block')
 parser.add_argument('--save_devices_objects_each_round_for_debug', type=int, default=0, help='about 4.4M per device with one block. 0 - do not save, 1 - save')
 
