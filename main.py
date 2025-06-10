@@ -101,7 +101,7 @@ parser.add_argument('--show_validation_performance_in_block', type=int, default=
 parser.add_argument('--save_devices_objects_each_round_for_debug', type=int, default=0, help='about 4.4M per device with one block. 0 - do not save, 1 - save')
 
 ####################### other settings #######################
-parser.add_argument('--save_init_global_model', type=int, default=0, help='0 - do not save, 1 - save')
+parser.add_argument('--save_init_global_model', type=int, default=1, help='0 - do not save, 1 - save')
 
 
 args = parser.parse_args()

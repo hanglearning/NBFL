@@ -55,7 +55,6 @@ class Device():
         self.max_model_acc = 0
         self._worker_pruned_ratio = 0
         self.noise_variance = noise_variance
-        self.acc_tracker = []
         # for validators
         self._validator_tx = None
         self._verified_worker_txs = {} # signature verified
@@ -146,7 +145,6 @@ class Device():
             self.model = max_model
             self.max_model_acc = max_acc
         
-        self.acc_tracker.append(self.max_model_acc)
         logger['local_max_acc'][comm_round][self.idx] = self.max_model_acc
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
