@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Python version: 3.6
-
-
 import os
 import copy
 import time
@@ -17,7 +12,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from baseline_codebases.LotteryFL.lotteryfl_utils import *
 
 from dataset.datasource import DataLoaders
-# from models import MLP, CNNMnist, CNNFashion_Mnist, CNNCifar, CNNFeMnist, CNNFeMnist_sim, CNNMiniImagenet, MLP_general
 from model.mnist.cnn import CNN as CNNMnist
 
 import torch
@@ -36,59 +30,24 @@ if __name__ == '__main__':
     args = args_parser()
     exp_details(args)
 
-    #if args.gpu:
-    #    torch.cuda.set_device(args.gpu)
     device = 'cuda' if args.gpu else 'cpu'
 
+    if not args.attack_type:
+        args.n_malicious = 0
+    
+    if args.dataset_mode == 'iid':
+        args.alpha = '∞'
+
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LotteryFL_seed_{args.seed}_{exe_date_time}_nmalicious_{args.n_malicious}_attack_{args.attack_type}_alpha_{args.alpha}"
+    log_root_name = f"LotteryFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_clients}_nsamples_{args.total_samples}_rounds_{args.epochs}_mal_{args.n_malicious}_attack_{args.attack_type}"
+
     args.log_dir = f"{args.log_dir}/{log_root_name}"
     os.makedirs(args.log_dir)
-
-    # load dataset and user groups
-    # print('loading dataset: {}...\n'.format(args.dataset))
-    # if args.dataset == 'femnist':
-    #     data_dir = '/home/leaf/data/femnist/data/' # put your leaf project path here
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_femnist(data_dir)
-    # elif args.dataset == 'cifar10_extr_noniid':
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_cifar10_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
-    # elif args.dataset == 'miniimagenet_extr_noniid':
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_miniimagenet_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
-    # elif args.dataset == 'mnist_extr_noniid':
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_mnist_extr_noniid(args.n_clients, args.nclass, args.total_samples, args.alpha)
-    # elif args.dataset == 'HAR':
-    #     data_dir = '../data/UCI HAR Dataset'
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_HAR(data_dir, args.num_samples)
-    # elif args.dataset == 'HAD':
-    #     data_dir = '../data/USC_HAD'
-    #     train_dataset, test_dataset, user_groups_train, user_groups_test = get_dataset_HAD(data_dir, args.num_samples)
-    # else:
-    #     train_dataset, test_dataset, user_groups = get_dataset(args)
-    # print('data loaded\n')
-
 
     print('building model...\n')
     global_model = CNNMnist()
     
-    # # BUILD MODEL
-    # if args.model == 'cnn':
-    #     # Convolutional neural netork
-    #     if args.dataset == 'mnist' or args.dataset == 'mnist_extr_noniid':
-    #         global_model = CNNMnist()
-    #     elif args.dataset == 'fmnist':
-    #         global_model = CNNFashion_Mnist(args=args)
-    #     elif args.dataset == 'cifar' or args.dataset == 'cifar10_extr_noniid':
-    #         global_model = CNNCifar(args=args)
-    #     elif args.dataset == 'femnist':
-    #         global_model = CNNFeMnist_sim(args=args)
-    #     elif args.dataset == 'miniimagenet_extr_noniid':
-    #         global_model = CNNMiniImagenet(args=args)
 
-    # elif args.model == 'mlp_general':
-    #     global_model = MLP_general(args)
-
-    # else:
-    #     exit('Error: unrecognized model')
     print('model built\n')
 
     # Set the model to train and send it to device.
@@ -138,7 +97,6 @@ if __name__ == '__main__':
         torch.backends.cudnn.benchmark = False
 
     def poison_model(model, noise_variance):
-        # produce_mask_from_model_in_place(model)
         layer_to_mask = calc_mask_from_model_without_mask_object(model) # introduce noise to unpruned weights
         for layer, module in model.named_children():
             for name, weight_params in module.named_parameters():
@@ -177,6 +135,8 @@ if __name__ == '__main__':
         noise_variances = [0.05]
     elif args.n_malicious == 6:
         noise_variances = [0.05, 0.5, 1.0]
+    elif args.n_malicious == 9:
+        noise_variances = [0.05, 0.05, 0.5, 1.0]
     elif args.n_malicious == 10:
         noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
 
