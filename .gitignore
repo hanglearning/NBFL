@@ -8,6 +8,7 @@ baseline_codebases/LotteryFL/data/**
 .DS_Store
 
 logs/**
+!logs/
 !logs/init_global_model_seed_30.pth
 !logs/init_global_model_seed_40.pth
 !logs/init_global_model_seed_50.pth
