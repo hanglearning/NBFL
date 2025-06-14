@@ -17,7 +17,6 @@ from server import Server
 from client import Client
 from baseline_utils import *
 from dataset.datasource import DataLoaders
-from torchmetrics import MetricCollection, Accuracy, Precision, Recall
 
 from datetime import datetime
 import pickle
@@ -32,7 +31,6 @@ models = {
         'mlp': MNIST_MLP
     }
 }
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -76,6 +74,7 @@ if __name__ == "__main__":
     # Run Type
     parser.add_argument('--standalone_LTH', type=int, default=0)
     parser.add_argument('--fedavg_no_prune_max_acc', type=int, default=0)
+    parser.add_argument('--PoIS', type=int, default=0)
     parser.add_argument('--attack_type', type=int, default=0, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack')
 
     
@@ -108,6 +107,8 @@ if __name__ == "__main__":
         run_name = "STANDALONE_LTH" # Pure Centralized
     if args.fedavg_no_prune_max_acc:
         run_name = "FEDAVG_NO_PRUNE" # Pure FedAvg without Pruning
+    if args.PoIS:
+        run_name = "PoIS"
     if args.CELL:
         run_name = "CELL"
 
@@ -129,6 +130,26 @@ if __name__ == "__main__":
                                               batch_size=args.batch_size,
                                               alpha=args.alpha_dirichlet,
                                               dataloader_workers=args.num_workers)
+    ''' PoIS code '''        
+    if args.PoIS:
+        # https://github.com/harshkasyap/DecFL/blob/master/Non%20IID/dirichlet%20distribution/vary%20attacker/fm_noniid_ba_9.py
+        from torchvision import datasets, transforms
+        transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+                ])
+        test_data = datasets.MNIST(root='./data',train=False,transform=transform,download=True)
+        _, test_data_2 = torch.utils.data.random_split(test_data, [8000, 2000])
+        test_data_bd, shap_background = torch.utils.data.random_split(test_data_2, [1500, 500])
+
+        shap_tr_loader = torch.utils.data.DataLoader(shap_background, batch_size = 128, shuffle=True) 
+        batch_shap = next(iter(shap_tr_loader))
+        images_shap, _ = batch_shap
+        background = images_shap[:100]
+        test_images = torch.zeros(1,1,28,28)
+
+    ''' PoIS code '''
+    
             
     # read init_global_model from file, which was generated from the NBFL run to ensure consistency
     # Construct the file path
@@ -213,7 +234,7 @@ if __name__ == "__main__":
         pickle.dump(args, f)
 
     for comm_round in range(1, args.rounds+1):
-        server.update(comm_round, logger)
+        server.update(comm_round, logger, background=background, test_images=test_images)
         # save logger
         with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
             pickle.dump(logger, f)
