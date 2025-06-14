@@ -2,8 +2,12 @@ __pycache__/
 data/**
 wandb/**
 POLL_BLKC/**
-logs/**
 baseline_codebases/CELL_FedAvg_Standalone/data/**
 baseline_codebases/LotteryFL/data/**
 *.pyc
 .DS_Store
+
+logs/**
+!logs/init_global_model_seed_30.pth
+!logs/init_global_model_seed_40.pth
+!logs/init_global_model_seed_50.pth

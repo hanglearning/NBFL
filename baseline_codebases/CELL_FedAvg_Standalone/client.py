@@ -267,21 +267,15 @@ class Client():
                 self.prune_rates.append(prune_rate)
             self.model = self.global_model
 
-        if self._is_malicious and self.args.attack_type == 1:
-            # skip training and poison local model on trainable weights before submission
-            print(f"\nPoisoning Model")
-            self.poison_model(self.model)
-            logger['local_max_acc'][comm_round][self.idx] = self.eval_model_by_train(self.model)
-        else:
-            print(f"\nTraining local model")
-            # self.train(self.elapsed_comm_rounds)
-            self.model_learning_max(comm_round, logger)
+
+        print(f"\nTraining local model")
+        # self.train(self.elapsed_comm_rounds)
+        self.model_learning_max(comm_round, logger)
 
         print(f"\nEvaluating Trained Model")
         metrics = self.eval(self.model)
         print(f'Trained model accuracy: {metrics['MulticlassAccuracy'][0]}')
 
-        logger['global_model_sparsity'][comm_round][self.idx] = 1 - get_pruned_amount(self.model)
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
         # wandb.log({f"{self.idx}_{self._user_labels}_after_pruning_sparsity": 1 - self.prune_rates[-1], "comm_round": comm_round})
@@ -305,6 +299,10 @@ class Client():
             self.save(self.model)
 
         self.elapsed_comm_rounds += 1
+
+    def update_PoIS(self, comm_round, logger):
+
+        self.model_learning_max(comm_round, logger)
 
 
     def train(self, round_index):
