@@ -28,7 +28,7 @@
             "program": "${workspaceFolder}//baseline_codebases/LotteryFL/lotteryFL.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--n_malicious", "10", "--seed", "50", "--total_samples", "200", "--alpha", "0.0", "--dataset_mode", "iid"]
+            "args": ["--n_malicious", "10", "--seed", "30", "--total_samples", "200", "--alpha", "1.0", "--dataset_mode", "non-iid", "--attack_type", "4"]
         },
         {
             "name": "standalone_LTH",
