@@ -34,20 +34,6 @@ class LocalUpdate(object):
         # Default criterion set to NLL loss function
         self.criterion = nn.NLLLoss().to(self.device)
 
-    def train_val_test_femnist(self, dataset, idxs, dataset_test, idxs_test):
-        idxs_train = idxs[:int(0.9*len(idxs))]
-        idxs_val = idxs[int(0.9*len(idxs)):]
-        idxs_test = idxs_test
-
-        trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
-                                 batch_size=self.args.batch_size, shuffle=True)
-        validloader = DataLoader(DatasetSplit(dataset, idxs_val),
-                                 batch_size=int(len(idxs_val)), shuffle=False)
-        testloader = DataLoader(DatasetSplit(dataset_test, idxs_test),
-                                batch_size=40, shuffle=True)
-        return trainloader, validloader, testloader    
-
-
     def train_val_test(self, dataset, idxs):
         """
         Returns train, validation and test dataloaders for a given dataset
