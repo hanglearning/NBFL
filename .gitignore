@@ -2,7 +2,7 @@ __pycache__/
 data/**
 wandb/**
 POLL_BLKC/**
-baseline_codebases/CELL_FedAvg_Standalone/data/**
+baseline_codebases/CELL_FedAvg_Standalone_PoIS/data/**
 baseline_codebases/LotteryFL/data/**
 *.pyc
 .DS_Store
