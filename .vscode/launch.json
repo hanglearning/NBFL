@@ -46,7 +46,7 @@
             "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--PoIS", "1", "--n_malicious", "10", "--seed", "30", "--epochs", "100", "--attack_type", "4", "--total_samples", "200", "--alpha_dirichlet", "1.0", "--dataset_mode", "non-iid"]
+            "args": ["--PoIS", "1", "--n_malicious", "10", "--seed", "30", "--total_samples", "200", "--alpha", "1.0", "--dataset_mode", "non-iid", "--attack_type", "4"]
         },
         {
             "name": "debug",

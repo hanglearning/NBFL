@@ -116,8 +116,8 @@ def main():
 
     set_seed(args.seed)
 
-    if not args.attack_type:
-        args.n_malicious = 0
+    if not args.n_malicious or not args.attack_type:
+        args.n_malicious, args.attack_type = 0, 0
     
     if args.dataset_mode == 'iid':
         args.alpha = '∞'
@@ -166,9 +166,9 @@ def main():
     elif args.n_malicious == 6:
         noise_variances = [0.05, 0.5, 1.0]
     elif args.n_malicious == 9:
-        noise_variances = [0.05, 0.05, 0.5, 1.0]
+        noise_variances = [0.05, 0.25, 0.5, 1.0]
     elif args.n_malicious == 10:
-        noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
+        noise_variances = [0.05, 0.25, 0.5, 0.75, 1.0]
 
     noise_attacker_idx = 0
     for i in range(1, args.n_devices + 1):
