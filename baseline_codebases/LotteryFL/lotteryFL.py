@@ -32,8 +32,8 @@ if __name__ == '__main__':
 
     device = 'cuda' if args.gpu else 'cpu'
 
-    if not args.attack_type:
-        args.n_malicious = 0
+    if not args.n_malicious or not args.attack_type:
+        args.n_malicious, args.attack_type = 0, 0
     
     if args.dataset_mode == 'iid':
         args.alpha = '∞'
@@ -136,9 +136,9 @@ if __name__ == '__main__':
     elif args.n_malicious == 6:
         noise_variances = [0.05, 0.5, 1.0]
     elif args.n_malicious == 9:
-        noise_variances = [0.05, 0.05, 0.5, 1.0]
+        noise_variances = [0.05, 0.25, 0.5, 1.0]
     elif args.n_malicious == 10:
-        noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
+        noise_variances = [0.05, 0.25, 0.5, 0.75, 1.0]
 
     for epoch in tqdm(range(args.epochs)):
         users_in_epoch = []

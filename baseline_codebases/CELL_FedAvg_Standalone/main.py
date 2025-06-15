@@ -96,11 +96,11 @@ if __name__ == "__main__":
 
     args.dev_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    if not args.attack_type:
-        args.n_malicious = 0
+    if not args.n_malicious or not args.attack_type:
+        args.n_malicious, args.attack_type = 0, 0
     
     if args.dataset_mode == 'iid':
-        args.alpha = '∞'
+        args.alpha_dirichlet = '∞'
 
     # from POLL_march_23_toy
     if args.standalone_LTH:
@@ -114,7 +114,7 @@ if __name__ == "__main__":
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
 
-    args.log_dir = f"{args.log_dir}/{run_name}_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_clients}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}"
+    args.log_dir = f"{args.log_dir}/{run_name}_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha_dirichlet}_{exe_date_time}_ndevices_{args.n_clients}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}"
 
     os.makedirs(args.log_dir)
 
@@ -175,9 +175,9 @@ if __name__ == "__main__":
     elif args.n_malicious == 6:
         noise_variances = [0.05, 0.5, 1.0]
     elif args.n_malicious == 9:
-        noise_variances = [0.05, 0.05, 0.5, 1.0]
+        noise_variances = [0.05, 0.25, 0.5, 1.0]
     elif args.n_malicious == 10:
-        noise_variances = [0.05, 0.05, 0.5, 0.5, 1.0]
+        noise_variances = [0.05, 0.25, 0.5, 0.75, 1.0]
 
     noise_attacker_idx = 0
     for i in range(1, args.n_clients + 1):

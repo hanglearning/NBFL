@@ -26,12 +26,11 @@ class NBFLLogAnalyzer:
     def parse_folder_name(self, folder_name):
         """Parse folder name to extract configuration parameters"""
         # Pattern to match NBFL folder structure
-        pattern = r'NBFL_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)'
-        match = re.match(pattern, folder_name)
+        nbfl_pattern = r'NBFL_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)'
+        nbfl_match = re.match(nbfl_pattern, folder_name)
         
-        if match:
-            seed, data_dist, alpha, ndevices, nsamples, rounds, mal, attack = match.groups()
-            # Create a config key that ignores seed and timestamp
+        if nbfl_match:
+            seed, data_dist, alpha, ndevices, nsamples, rounds, mal, attack = nbfl_match.groups()
             config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack}"
             return {
                 'config_key': config_key,
@@ -42,8 +41,36 @@ class NBFLLogAnalyzer:
                 'nsamples': int(nsamples),
                 'rounds': int(rounds),
                 'mal': int(mal),
-                'attack': int(attack)
+                'attack': int(attack),
+                'method': 'NBFL'
             }
+        
+        # Pattern to match baseline methods (with actual folder name patterns)
+        baseline_patterns = {
+            'STANDALONE': r'STANDALONE_LTH_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)',
+            'FEDAVG': r'FEDAVG_NO_PRUNE_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)',
+            'LOTTERYFL': r'LotteryFL_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)',
+            'POIS': r'PoIS_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)'
+        }
+        
+        for method, pattern in baseline_patterns.items():
+            match = re.match(pattern, folder_name)
+            if match:
+                seed, data_dist, alpha, ndevices, nsamples, rounds, mal, attack = match.groups()
+                config_key = f"{method}_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack}"
+                return {
+                    'config_key': config_key,
+                    'seed': int(seed),
+                    'data_dist': data_dist,
+                    'alpha': alpha,
+                    'ndevices': int(ndevices),
+                    'nsamples': int(nsamples),
+                    'rounds': int(rounds),
+                    'mal': int(mal),
+                    'attack': int(attack),
+                    'method': method
+                }
+        
         return None
 
     def group_logs_by_config(self):
@@ -56,15 +83,48 @@ class NBFLLogAnalyzer:
             if os.path.isdir(folder_path):
                 parsed = self.parse_folder_name(folder)
                 if parsed:
-                    config_groups[parsed['config_key']].append({
+                    # Group by configuration, keeping method-specific keys
+                    if parsed['method'] == 'NBFL':
+                        config_key = f"NBFL_mnist_{parsed['data_dist']}_alpha_{parsed['alpha']}_ndevices_{parsed['ndevices']}_nsamples_{parsed['nsamples']}_rounds_{parsed['rounds']}_mal_{parsed['mal']}_attack_{parsed['attack']}"
+                    else:
+                        # Use method-specific config key for baselines
+                        config_key = f"{parsed['method']}_mnist_{parsed['data_dist']}_alpha_{parsed['alpha']}_ndevices_{parsed['ndevices']}_nsamples_{parsed['nsamples']}_rounds_{parsed['rounds']}_mal_{parsed['mal']}_attack_{parsed['attack']}"
+                    
+                    config_groups[config_key].append({
                         'path': folder_path,
                         'seed': parsed['seed'],
-                        'config': parsed
+                        'config': parsed,
+                        'method': parsed['method']
                     })
         
         return config_groups
 
     def get_unique_configs(self, config_groups):
+        """Extract unique configurations from grouped logs"""
+        unique_configs = set()
+        for config_key, logs in config_groups.items():
+            if logs and 'NBFL_' in config_key:  # Only consider NBFL configs for unique configs
+                config = logs[0]['config']  # Get config from first log in group
+                unique_configs.add((config['mal'], config['attack'], config['alpha'], config['data_dist']))
+        return unique_configs
+
+    def get_baseline_logs_for_config(self, config_groups, mal, attack_type, alpha, data_dist):
+        """Get baseline method logs for a specific configuration"""
+        baseline_logs = {
+            'STANDALONE': [],
+            'FEDAVG': [],
+            'LOTTERYFL': [],
+            'POIS': []
+        }
+        
+        # Look for each baseline method with its specific config key
+        for method in baseline_logs.keys():
+            baseline_config_key = f"{method}_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}"
+            
+            if baseline_config_key in config_groups:
+                baseline_logs[method] = config_groups[baseline_config_key]
+        
+        return baseline_logs
         """Extract unique configurations from grouped logs"""
         unique_configs = set()
         for config_key, logs in config_groups.items():
@@ -139,20 +199,43 @@ class NBFLLogAnalyzer:
     def process_metric_data(self, logger, logger_concerning, legitimate_only=False, mal_count=0):
         """Process metric data from logger (works for accuracy and sparsity metrics)"""
         metric_values_over_devices = []
-        for comm_round, metric_dict in logger[logger_concerning].items():
-            if legitimate_only and 'local' in logger_concerning:
-                # Sort devices and take only legitimate ones (exclude last mal_count devices)
-                sorted_devices = sorted(metric_dict.keys())
-                legitimate_devices = sorted_devices[:-mal_count] if mal_count > 0 else sorted_devices
-                metric_values = [metric_dict[device] for device in legitimate_devices]
-            else:
-                metric_values = list(metric_dict.values())
-            metric_values_over_devices.append(metric_values)
         
-        if metric_values_over_devices:
-            metric_values_over_devices = list(zip(*metric_values_over_devices))
-            return np.mean(metric_values_over_devices, axis=0)
-        return None
+        try:
+            for comm_round, metric_dict in logger[logger_concerning].items():
+                if legitimate_only and 'local' in logger_concerning:
+                    # Sort devices and take only legitimate ones (exclude last mal_count devices)
+                    sorted_devices = sorted(metric_dict.keys())
+                    legitimate_devices = sorted_devices[:-mal_count] if mal_count > 0 else sorted_devices
+                    metric_values = [metric_dict[device] for device in legitimate_devices]
+                else:
+                    metric_values = list(metric_dict.values())
+                metric_values_over_devices.append(metric_values)
+            
+            if metric_values_over_devices:
+                # Debug: Check the structure
+                # print(f"    Debug: metric_values_over_devices length: {len(metric_values_over_devices)}")
+                # if metric_values_over_devices:
+                #     print(f"    Debug: first round values: {metric_values_over_devices[0]}")
+                
+                metric_values_over_devices = list(zip(*metric_values_over_devices))
+                # print(f"    Debug: after transpose, shape: {len(metric_values_over_devices)} devices")
+                
+                result = np.mean(metric_values_over_devices, axis=0)
+                # print(f"    Debug: result type: {type(result)}, value: {result}")
+                
+                # Ensure we always return an array, even if it's 1D
+                if np.isscalar(result) or result.ndim == 0:
+                    return np.array([result])
+                return result
+            else:
+                print("\033[91m" + f"    Debug: No metric data found for {logger_concerning}" + "\033[0m")
+                return None
+                
+        except Exception as e:
+            print("\033[91m" + f"    Debug: Error in process_metric_data: {e}" + "\033[0m")
+            print("\033[91m" + f"    Debug: logger_concerning: {logger_concerning}" + "\033[0m")
+            print("\033[91m" + f"    Debug: logger keys available: {list(logger.keys())}" + "\033[0m")
+            return None
 
     def process_logs_for_config(self, logs_for_config, logger_concerning, legitimate_only=False, mal_count=0):
         """Process all logs for a specific configuration"""
@@ -162,14 +245,23 @@ class NBFLLogAnalyzer:
             log_path = log_info['path']
             seed = log_info['seed']
             
+            print(f"  Processing seed {seed} from {log_path}")
             logger = self.load_logger_data(log_path, logger_concerning)
             if logger is None:
+                print(f"    Failed to load logger data")
                 continue
                 
             avg_over_devices = self.process_metric_data(logger, logger_concerning, legitimate_only, mal_count)
             if avg_over_devices is not None:
+                # Check for NaN values
+                if np.any(np.isnan(avg_over_devices)):
+                    print(f"    Warning: NaN values detected in seed {seed}, skipping")
+                    continue
+                
                 avg_values_over_runs.append(avg_over_devices)
-                print(f"  Processed seed {seed}: {len(avg_over_devices)} rounds")
+                print(f"    Successfully processed seed {seed}: {len(avg_over_devices)} rounds")
+            else:
+                print(f"    No valid data for seed {seed}")
         
         return avg_values_over_runs
 
@@ -206,7 +298,7 @@ class NBFLLogAnalyzer:
         plt.close()
 
     def generate_metric_plots(self, logger_concerning, y_axis_label, 
-                            alpha_filter=None, legitimate_plots=False, verbose=True):
+                            alpha_filter=None, legitimate_plots=False, verbose=True, include_baselines=True):
         """Generate plots for a specific metric across all configurations"""
         if verbose:
             print(f"Generating plots for {logger_concerning}...")
@@ -235,52 +327,241 @@ class NBFLLogAnalyzer:
             if verbose:
                 print(f"Processing: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}")
             
-            # Find matching configuration key
-            target_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}"
+            # Find matching NBFL configuration key
+            nbfl_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}"
             
-            if target_config_key not in config_groups:
-                print(f"No logs found for config: {target_config_key}")
+            if nbfl_config_key not in config_groups:
+                print(f"No NBFL logs found for config: {nbfl_config_key}")
                 continue
             
-            logs_for_config = config_groups[target_config_key]
-            print(f"Found {len(logs_for_config)} log folders with different seeds")
+            nbfl_logs = config_groups[nbfl_config_key]
+            print(f"Found {len(nbfl_logs)} NBFL log folders with different seeds")
             
-            # Process logs for all devices
-            avg_values_over_runs = self.process_logs_for_config(
-                logs_for_config, logger_concerning, legitimate_only=False, mal_count=mal
-            )
+            # Determine which methods to plot
+            if include_baselines:
+                if attack_type == 0:
+                    # For no attack, check which baselines actually exist
+                    available_methods = ['NBFL']  # NBFL always included
+                    baseline_logs = self.get_baseline_logs_for_config(config_groups, mal, attack_type, alpha, data_dist)
+                    
+                    # Only include baselines that have actual log files
+                    for method in ['STANDALONE', 'FEDAVG', 'LOTTERYFL', 'POIS']:
+                        if baseline_logs.get(method):
+                            available_methods.append(method)
+                            if verbose:
+                                print(f"  Found {len(baseline_logs[method])} {method} logs")
+                        else:
+                            if verbose:
+                                print(f"  No {method} logs found for this config")
+                    
+                    methods = available_methods
+                    colors = ['red', 'blue', 'green', 'purple', 'orange'][:len(methods)]
+                else:
+                    # For attacks, typically only NBFL, LotteryFL, and POIS
+                    available_methods = ['NBFL']
+                    baseline_logs = self.get_baseline_logs_for_config(config_groups, mal, attack_type, alpha, data_dist)
+                    
+                    for method in ['LOTTERYFL', 'POIS']:
+                        if baseline_logs.get(method):
+                            available_methods.append(method)
+                            if verbose:
+                                print(f"  Found {len(baseline_logs[method])} {method} logs")
+                        else:
+                            if verbose:
+                                print(f"  No {method} logs found for this config")
+                    
+                    methods = available_methods
+                    colors = ['red', 'purple', 'orange'][:len(methods)]
+            else:
+                methods = ['NBFL']
+                colors = ['red']
+                baseline_logs = {}
             
-            if not avg_values_over_runs:
-                print(f"No valid data found for config: {target_config_key}")
-                continue
+            plt.figure(figsize=(10, 6))
             
-            # Calculate mean and std across different seeds
-            mean_line = np.mean(avg_values_over_runs, axis=0)
-            std = np.std(avg_values_over_runs, axis=0)
+            # First pass: collect all mean lines to detect overlaps
+            method_data = []
+            for i, method in enumerate(methods):
+                if method == 'NBFL':
+                    logs_for_method = nbfl_logs
+                else:
+                    logs_for_method = baseline_logs.get(method, [])
+                
+                if not logs_for_method:
+                    if verbose:
+                        print(f"  Skipping {method}: no logs available")
+                    continue
+                
+                if verbose:
+                    print(f"  Processing {method} with {len(logs_for_method)} logs")
+                
+                # Process logs for current method
+                avg_values_over_runs = self.process_logs_for_config(
+                    logs_for_method, logger_concerning, legitimate_only=False, mal_count=mal
+                )
+                
+                if not avg_values_over_runs:
+                    if verbose:
+                        print(f"  No valid {method} data found after processing")
+                    continue
+                
+                if verbose:
+                    print(f"  {method}: Successfully processed {len(avg_values_over_runs)} runs")
+                
+                # Calculate mean and std across different seeds
+                mean_line = np.mean(avg_values_over_runs, axis=0)
+                std = np.std(avg_values_over_runs, axis=0)
+                
+                # Check for NaN or empty data
+                if np.any(np.isnan(mean_line)) or len(mean_line) == 0:
+                    if verbose:
+                        print(f"  Skipping {method}: invalid mean_line (NaN or empty)")
+                    continue
+                
+                # Check for flat lines at extremes
+                if np.all(mean_line == 1.0):
+                    if verbose:
+                        print(f"  Warning: {method} has constant sparsity=1.0 (flat line at top)")
+                elif np.all(mean_line == 0.0):
+                    if verbose:
+                        print(f"  Warning: {method} has constant sparsity=0.0 (flat line at bottom)")
+                
+                method_data.append({
+                    'method': method,
+                    'mean_line': mean_line,
+                    'std': std,
+                    'color': colors[i],
+                    'num_runs': len(avg_values_over_runs)
+                })
+            
+            # Smart overlap detection
+            def detect_overlaps(method_data, tolerance=1e-6):
+                """Detect which methods have overlapping curves"""
+                overlap_groups = []
+                for i, data1 in enumerate(method_data):
+                    group = [i]
+                    for j, data2 in enumerate(method_data[i+1:], i+1):
+                        # Check if curves are approximately the same
+                        if len(data1['mean_line']) == len(data2['mean_line']):
+                            if np.allclose(data1['mean_line'], data2['mean_line'], atol=tolerance):
+                                group.append(j)
+                    if len(group) > 1:
+                        overlap_groups.append(group)
+                        # Remove already grouped indices from future checks
+                        method_data = [d for k, d in enumerate(method_data) if k not in group[1:]]
+                return overlap_groups
+            
+            overlap_groups = detect_overlaps(method_data)
+            
+            # Assign line styles based on overlaps
+            line_styles = ['-'] * len(method_data)  # Default to solid lines
+            alternative_styles = ['--', '-.', ':', '-', '--']  # Dashed, dash-dot, dotted, solid, dashed
+            
+            for group in overlap_groups:
+                if verbose:
+                    overlapping_methods = [method_data[i]['method'] for i in group]
+                    print(f"  Overlap detected: {overlapping_methods}")
+                
+                # Assign different line styles to overlapping methods
+                for j, idx in enumerate(group):
+                    line_styles[idx] = alternative_styles[j % len(alternative_styles)]
+            
+            # Second pass: plot with appropriate line styles
+            for i, data in enumerate(method_data):
+                method = data['method']
+                mean_line = data['mean_line']
+                std = data['std']
+                color = data['color']
+                num_runs = data['num_runs']
+                line_style = line_styles[i]
+                
+                # Plot with error bands
+                plt.fill_between(range(1, len(mean_line) + 1), mean_line - std, mean_line + std,
+                                facecolor=color, color=color, alpha=0.2)
+                
+                plot_label = f'{method} ({num_runs} seeds)'
+                plt.plot(range(1, len(mean_line) + 1), mean_line, color=color, 
+                        linestyle=line_style, linewidth=2, label=plot_label)
+                
+                # Add text annotations every 5 x-axis ticks
+                x = 0
+                plt.text(x + 1, mean_line[x], f'{mean_line[x]:.2f}', 
+                        ha='center', va='bottom', fontsize=8, color='black')
+                for x in range(4, len(mean_line), 5):
+                    plt.text(x + 1, mean_line[x], f'{mean_line[x]:.2f}', 
+                            ha='center', va='bottom', fontsize=8, color='black')
+            
+            plt.legend(loc='best')
+            plt.xlabel('Communication Round')
+            plt.ylabel(y_axis_label)
+            
+            # Extend y-axis range to ensure flat lines at 1.0 are visible
+            if y_axis_label == 'Sparsity':
+                plt.ylim(-0.05, 1.05)  # Add margin above 1.0 for sparsity plots
             
             # Create title and filename
             title = f'{" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}'
-            filename = f'{self.log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}.png'
+            if include_baselines:
+                filename = f'{self.log_base_path}/NBFL/logs/comparison_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}.png'
+            else:
+                filename = f'{self.log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}.png'
             
-            # Create plot
-            self.create_standard_plot(mean_line, std, title, y_axis_label, filename, 
-                                    num_seeds=len(avg_values_over_runs))
+            plt.title(title)
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"Saved plot: {filename}")
+            plt.clf()
+            plt.close()
             
             # Generate legitimate device plots if requested and applicable
             if legitimate_plots and 'local' in logger_concerning and attack_type != 0 and mal > 0:
-                legitimate_avg_values = self.process_logs_for_config(
-                    logs_for_config, logger_concerning, legitimate_only=True, mal_count=mal
-                )
+                plt.figure(figsize=(10, 6))
                 
-                if legitimate_avg_values:
-                    legit_mean_line = np.mean(legitimate_avg_values, axis=0)
-                    legit_std = np.std(legitimate_avg_values, axis=0)
+                for i, method in enumerate(methods):
+                    if method == 'NBFL':
+                        logs_for_method = nbfl_logs
+                    else:
+                        logs_for_method = baseline_logs.get(method, [])
                     
-                    legit_title = f'LEGIT {" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}'
+                    if not logs_for_method:
+                        continue
+                    
+                    legitimate_avg_values = self.process_logs_for_config(
+                        logs_for_method, logger_concerning, legitimate_only=True, mal_count=mal
+                    )
+                    
+                    if legitimate_avg_values:
+                        legit_mean_line = np.mean(legitimate_avg_values, axis=0)
+                        legit_std = np.std(legitimate_avg_values, axis=0)
+                        
+                        plt.fill_between(range(1, len(legit_mean_line) + 1), legit_mean_line - legit_std, legit_mean_line + legit_std,
+                                        facecolor=colors[i], color=colors[i], alpha=0.2)
+                        
+                        plot_label = f'{method} ({len(legitimate_avg_values)} seeds)'
+                        plt.plot(range(1, len(legit_mean_line) + 1), legit_mean_line, color=colors[i], label=plot_label)
+                        
+                        # Add text annotations
+                        x = 0
+                        plt.text(x + 1, legit_mean_line[x], f'{legit_mean_line[x]:.2f}', 
+                                ha='center', va='bottom', fontsize=8, color='black')
+                        for x in range(4, len(legit_mean_line), 5):
+                            plt.text(x + 1, legit_mean_line[x], f'{legit_mean_line[x]:.2f}', 
+                                    ha='center', va='bottom', fontsize=8, color='black')
+                
+                plt.legend(loc='best')
+                plt.xlabel('Communication Round')
+                plt.ylabel(y_axis_label)
+                
+                legit_title = f'LEGIT {" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}'
+                if include_baselines:
+                    legit_filename = f'{self.log_base_path}/NBFL/logs/comparison_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_legitimate.png'
+                else:
                     legit_filename = f'{self.log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_legitimate.png'
-                    
-                    self.create_standard_plot(legit_mean_line, legit_std, legit_title, y_axis_label, 
-                                            legit_filename, num_seeds=len(legitimate_avg_values))
+                
+                plt.title(legit_title)
+                plt.savefig(legit_filename, dpi=300, bbox_inches='tight')
+                print(f"Saved legitimate plot: {legit_filename}")
+                plt.clf()
+                plt.close()
 
     def process_stake_data(self, logger):
         """Process stake data from pos_book logger"""
@@ -570,7 +851,7 @@ class NBFLLogAnalyzer:
         plt.clf()
         plt.close()
 
-    def generate_plot_validator_selections_plots(self, alpha_filter=None, verbose=True):
+    def generate_winning_validator_plots(self, alpha_filter=None, verbose=True):
         """Generate winning validator plots showing device choices across communication rounds"""
         if verbose:
             print("Generating winning validator plots...")
@@ -661,7 +942,7 @@ class NBFLLogAnalyzer:
                 # Customize the plot
                 ax.set_xlabel('Communication Round', fontsize=10)
                 ax.set_ylabel('Winning Validator ID', fontsize=10)
-                ax.set_title(f'Winning Validator Selections - M{mal} - {self.attack_type_map[attack_type]}, seed: {seed}, α: {alpha}, {data_dist.upper()}', fontsize=12)
+                ax.set_title(f'Winning Validator Selection - M{mal} - {self.attack_type_map[attack_type]}, seed: {seed}, α: {alpha}, {data_dist.upper()}', fontsize=12)
                 
                 # Set integer ticks for both axes
                 if comm_rounds:
@@ -687,7 +968,7 @@ class NBFLLogAnalyzer:
                     ax.axhline(y=validator_id, color='lightgray', linestyle='-', linewidth=0.5, alpha=0.7)
                 
                 # Save the plot
-                filename = f'{self.log_base_path}/NBFL/logs/validator_selections_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_seed_{seed}.png'
+                filename = f'{self.log_base_path}/NBFL/logs/winning_validator_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_seed_{seed}.png'
                 plt.savefig(filename, dpi=300, bbox_inches='tight')
                 if verbose:
                     print(f"  Saved: {filename}")
@@ -732,4 +1013,4 @@ def generate_all_plots(log_base_path='/Users/chenhang/Documents/Working', alpha_
     analyzer.generate_event_plots('malicious_winning_count', alpha_filter, verbose=verbose)
     
     # Generate winning validator plots
-    analyzer.generate_plot_validator_selections_plots(alpha_filter, verbose=verbose)
+    analyzer.generate_winning_validator_plots(alpha_filter, verbose=verbose)

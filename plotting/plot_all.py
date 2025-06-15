@@ -28,32 +28,36 @@ def main():
     print(f"  Total log groups: {summary['total_log_groups']}")
     print("=" * 60)
     
-    # 1. Generate accuracy plots
-    print("\n1. Generating accuracy plots...")
+    # 1. Generate accuracy plots with baseline comparisons
+    print("\n1. Generating accuracy plots with baseline comparisons...")
     analyzer.generate_metric_plots(
         logger_concerning='global_test_acc',
         y_axis_label='Accuracy',
-        legitimate_plots=False
+        legitimate_plots=False,
+        include_baselines=True
     )
     
     analyzer.generate_metric_plots(
         logger_concerning='local_test_acc',
         y_axis_label='Accuracy',
-        legitimate_plots=True
+        legitimate_plots=True,
+        include_baselines=True
     )
     
     analyzer.generate_metric_plots(
         logger_concerning='local_max_acc',
         y_axis_label='Accuracy',
-        legitimate_plots=True
+        legitimate_plots=True,
+        include_baselines=True
     )
     
-    # 2. Generate sparsity plots
-    print("\n2. Generating sparsity plots...")
+    # 2. Generate sparsity plots with baseline comparisons
+    print("\n2. Generating sparsity plots with baseline comparisons...")
     analyzer.generate_metric_plots(
         logger_concerning='global_model_sparsity',
         y_axis_label='Sparsity',
-        legitimate_plots=False
+        legitimate_plots=False,
+        include_baselines=True
     )
     
     # 3. Generate stake plots
@@ -67,7 +71,7 @@ def main():
     
     # 5. Generate winning validator plots
     print("\n5. Generating winning validator plots...")
-    analyzer.generate_plot_validator_selections_plots()
+    analyzer.generate_winning_validator_plots()
     
     print("\n" + "=" * 60)
     print("All plots generated successfully!")
