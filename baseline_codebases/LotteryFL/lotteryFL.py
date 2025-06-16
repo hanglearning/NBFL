@@ -483,8 +483,6 @@ if __name__ == '__main__':
     logger['local_val_acc'] = {r: {} for r in range(1, args.epochs + 1)}
     logger['local_test_acc'] = {r: {} for r in range(1, args.epochs + 1)}
     logger['local_max_acc'] = {r: {} for r in range(1, args.epochs + 1)}  # Added back
-    logger['original_data_distribution'] = user_labels  # From DataLoaders
-    logger['expansion_split_info'] = split_infos  # Our expansion and split info
 
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
