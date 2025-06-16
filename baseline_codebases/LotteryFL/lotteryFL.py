@@ -98,6 +98,9 @@ def expand_with_val_test_data(original_train_loader, device_id, log_dirpath, see
     for label in client_labels:
         all_available_indices.extend(available_indices_by_label[label])
     
+    # Remove any potential duplicates and convert to list
+    all_available_indices = list(set(all_available_indices))
+    
     # Shuffle all available indices (like original LotteryFL would do)
     np.random.shuffle(all_available_indices)
     
