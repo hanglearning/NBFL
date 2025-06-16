@@ -118,9 +118,14 @@ def expand_with_val_test_data(original_train_loader, device_id, log_dirpath, see
     # Convert used_train_indices back to list for consistency
     train_indices = list(used_train_indices)
     
-    # Verify no overlap
-    all_indices = set(train_indices) | set(val_indices) | set(test_indices)
-    assert len(all_indices) == len(train_indices) + len(val_indices) + len(test_indices), "Index overlap detected!"
+    # Verify no overlap between val and test indices (train_indices are separate/pre-existing)
+    val_test_indices = set(val_indices) | set(test_indices)
+    assert len(val_test_indices) == len(val_indices) + len(test_indices), "Val/Test index overlap detected!"
+    
+    # Verify val and test indices don't overlap with training indices
+    overlap_with_train = set(val_indices) & set(train_indices)
+    overlap_with_train.update(set(test_indices) & set(train_indices))
+    assert len(overlap_with_train) == 0, f"Val/Test indices overlap with training indices: {len(overlap_with_train)} overlaps found!"
     
     # Create data loaders
     batch_size = original_train_loader.batch_size
@@ -184,11 +189,11 @@ def expand_with_val_test_data(original_train_loader, device_id, log_dirpath, see
     val_dist_msg = f"Device {device_id + 1} Final Val label distribution: {dict(enumerate(val_label_counts_final))}"
     test_dist_msg = f"Device {device_id + 1} Final Test label distribution: {dict(enumerate(test_label_counts_final))}"
     
-    # with open(f"{log_dirpath}/data_expansion_log.txt", "a") as f:
-    #     f.write(f"{log_msg}\n")
-    #     f.write(f"{train_dist_msg}\n")
-    #     f.write(f"{val_dist_msg}\n") 
-    #     f.write(f"{test_dist_msg}\n\n")
+    with open(f"{log_dirpath}/data_expansion_log.txt", "a") as f:
+        f.write(f"{log_msg}\n")
+        f.write(f"{train_dist_msg}\n")
+        f.write(f"{val_dist_msg}\n") 
+        f.write(f"{test_dist_msg}\n\n")
     
     if False:  # Verbose logging - set to True for debugging
         print(log_msg)
