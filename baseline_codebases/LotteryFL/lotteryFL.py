@@ -64,18 +64,18 @@ def expand_with_val_test_data(original_train_loader, device_id, log_dirpath, see
     
     # Get the labels that this client has in their training data
     train_labels = [full_dataset.targets[idx] for idx in used_train_indices]
-    client_labels = set(train_labels)
+    client_labels = sorted(list(set([int(label) for label in train_labels])))  # Convert tensors to int and get unique
     
     print(f"Expanding val and test samples for device {device_id + 1}")
     
     if False:  # Verbose logging - set to True for debugging
-        print(f"Device {device_id + 1}: Train data has {len(used_train_indices)} samples with labels {sorted(client_labels)}")
+        print(f"Device {device_id + 1}: Train data has {len(used_train_indices)} samples with labels {client_labels}")
     
     # Find all available indices for each label that this client has, excluding ALL globally used indices
     available_indices_by_label = {}
     for label in client_labels:
         # Get all indices in full dataset that have this label
-        all_indices_for_label = [i for i, target in enumerate(full_dataset.targets) if target == label]
+        all_indices_for_label = [i for i, target in enumerate(full_dataset.targets) if int(target) == label]
         # Remove indices already used GLOBALLY (across all devices)
         available_indices = [i for i in all_indices_for_label if i not in globally_used_indices]
         available_indices_by_label[label] = available_indices
@@ -92,31 +92,59 @@ def expand_with_val_test_data(original_train_loader, device_id, log_dirpath, see
     if False:  # Verbose logging - set to True for debugging
         print(f"Device {device_id + 1}: Need {additional_needed} additional samples ({val_size} val + {test_size} test)")
     
-    # Collect all available indices (regardless of label) and shuffle
-    # This mimics the original LotteryFL approach which doesn't care about label distribution
-    all_available_indices = []
+    # Collect all available indices ensuring each label gets at least 1 val and 1 test sample
+    # This ensures better evaluation coverage while still following LotteryFL's simple approach
+    val_indices = []
+    test_indices = []
+    
+    # Check if we can guarantee 1 sample per label for both val and test
+    min_samples_needed = len(client_labels) * 2  # 1 for val + 1 for test per label
+    
+    # Always try to guarantee representation since we have enough MNIST data
+    remaining_val_needed = val_size
+    remaining_test_needed = test_size
+    
+    # First pass: ensure each label gets at least 1 sample in val and 1 in test
+    for label in client_labels:  # Now iterating through unique labels only
+        available_for_label = available_indices_by_label[label]
+        
+        if len(available_for_label) >= 2 and remaining_val_needed > 0 and remaining_test_needed > 0:
+            np.random.shuffle(available_for_label)
+            # Take 1 for val, 1 for test
+            val_indices.append(available_for_label[0])
+            test_indices.append(available_for_label[1])
+            # Remove these from available pool
+            available_indices_by_label[label] = available_for_label[2:]
+            remaining_val_needed -= 1
+            remaining_test_needed -= 1
+        elif len(available_for_label) >= 1:
+            # Only 1 sample available, prioritize the set with more remaining need
+            if remaining_val_needed >= remaining_test_needed and remaining_val_needed > 0:
+                val_indices.append(available_for_label[0])
+                remaining_val_needed -= 1
+            elif remaining_test_needed > 0:
+                test_indices.append(available_for_label[0])
+                remaining_test_needed -= 1
+            available_indices_by_label[label] = available_for_label[1:]
+    
+    # Collect remaining available indices for random distribution
+    remaining_available_indices = []
     for label in client_labels:
-        all_available_indices.extend(available_indices_by_label[label])
+        remaining_available_indices.extend(available_indices_by_label[label])
     
-    # Remove any potential duplicates and convert to list
-    all_available_indices = list(set(all_available_indices))
+    # Shuffle remaining indices
+    np.random.shuffle(remaining_available_indices)
     
-    # Shuffle all available indices (like original LotteryFL would do)
-    np.random.shuffle(all_available_indices)
+    # Distribute remaining samples to reach exact target counts
+    additional_val_needed = min(remaining_val_needed, len(remaining_available_indices))
+    val_indices.extend(remaining_available_indices[:additional_val_needed])
     
-    # Simple sequential split (just like original LotteryFL)
-    # Take first val_size for validation, next test_size for test
-    if len(all_available_indices) >= additional_needed:
-        val_indices = all_available_indices[:val_size]
-        test_indices = all_available_indices[val_size:val_size + test_size]
-        if False:  # Verbose logging - set to True for debugging
-            print(f"Device {device_id + 1}: Successfully allocated {len(val_indices)} val + {len(test_indices)} test samples")
-    else:
-        # If not enough samples available, take what we can
-        available_count = len(all_available_indices)
-        val_indices = all_available_indices[:min(val_size, available_count)]
-        test_indices = all_available_indices[len(val_indices):min(len(val_indices) + test_size, available_count)]
-        print(f"Warning: Device {device_id + 1} - Only {available_count} samples available, got {len(val_indices)} val + {len(test_indices)} test")
+    additional_test_needed = min(remaining_test_needed, len(remaining_available_indices) - additional_val_needed)
+    test_indices.extend(remaining_available_indices[additional_val_needed:additional_val_needed + additional_test_needed])
+    
+    if False:  # Verbose logging - set to True for debugging
+        print(f"Device {device_id + 1}: Successfully allocated {len(val_indices)} val + {len(test_indices)} test samples")
+        print(f"Device {device_id + 1}: Target was {val_size} val + {test_size} test")
     
     # Convert used_train_indices back to list for consistency
     train_indices = list(used_train_indices)
