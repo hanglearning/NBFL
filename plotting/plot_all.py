@@ -38,13 +38,6 @@ def main():
     )
     
     analyzer.generate_metric_plots(
-        logger_concerning='local_test_acc',
-        y_axis_label='Accuracy',
-        legitimate_plots=True,
-        include_baselines=True
-    )
-    
-    analyzer.generate_metric_plots(
         logger_concerning='local_max_acc',
         y_axis_label='Accuracy',
         legitimate_plots=True,

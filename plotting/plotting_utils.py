@@ -50,7 +50,8 @@ class NBFLLogAnalyzer:
             'STANDALONE': r'STANDALONE_LTH_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)',
             'FEDAVG': r'FEDAVG_NO_PRUNE_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)',
             'LOTTERYFL': r'LotteryFL_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)',
-            'POIS': r'PoIS_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)'
+            'POIS': r'PoIS_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)',
+            'CELL': r'CELL_mnist_seed_(\d+)_(iid|non-iid)_alpha_([\d\.∞]+)_\d{8}_\d{6}_ndevices_(\d+)_nsamples_(\d+)_rounds_(\d+)_mal_(\d+)_attack_(\d+)'
         }
         
         for method, pattern in baseline_patterns.items():
@@ -114,7 +115,8 @@ class NBFLLogAnalyzer:
             'STANDALONE': [],
             'FEDAVG': [],
             'LOTTERYFL': [],
-            'POIS': []
+            'POIS': [],
+            'CELL': []
         }
         
         # Look for each baseline method with its specific config key
@@ -345,7 +347,7 @@ class NBFLLogAnalyzer:
                     baseline_logs = self.get_baseline_logs_for_config(config_groups, mal, attack_type, alpha, data_dist)
                     
                     # Only include baselines that have actual log files
-                    for method in ['STANDALONE', 'FEDAVG', 'LOTTERYFL', 'POIS']:
+                    for method in ['STANDALONE', 'FEDAVG', 'LOTTERYFL', 'POIS', 'CELL']:
                         if baseline_logs.get(method):
                             available_methods.append(method)
                             if verbose:
@@ -355,13 +357,13 @@ class NBFLLogAnalyzer:
                                 print(f"  No {method} logs found for this config")
                     
                     methods = available_methods
-                    colors = ['red', 'blue', 'green', 'purple', 'orange'][:len(methods)]
+                    colors = ['red', 'blue', 'green', 'purple', 'orange', 'brown'][:len(methods)]
                 else:
-                    # For attacks, typically only NBFL, LotteryFL, and POIS
+                    # For attacks, include NBFL, FEDAVG, LotteryFL, POIS, and CELL
                     available_methods = ['NBFL']
                     baseline_logs = self.get_baseline_logs_for_config(config_groups, mal, attack_type, alpha, data_dist)
                     
-                    for method in ['LOTTERYFL', 'POIS']:
+                    for method in ['FEDAVG', 'LOTTERYFL', 'POIS', 'CELL']:
                         if baseline_logs.get(method):
                             available_methods.append(method)
                             if verbose:
@@ -371,7 +373,7 @@ class NBFLLogAnalyzer:
                                 print(f"  No {method} logs found for this config")
                     
                     methods = available_methods
-                    colors = ['red', 'purple', 'orange'][:len(methods)]
+                    colors = ['red', 'green', 'purple', 'orange', 'brown'][:len(methods)]
             else:
                 methods = ['NBFL']
                 colors = ['red']
@@ -1002,7 +1004,6 @@ def generate_all_plots(log_base_path='/Users/chenhang/Documents/Working', alpha_
     # Generate metric plots
     analyzer.generate_metric_plots('global_test_acc', 'Accuracy', alpha_filter, verbose=verbose)
     analyzer.generate_metric_plots('global_model_sparsity', 'Sparsity', alpha_filter, verbose=verbose)
-    analyzer.generate_metric_plots('local_test_acc', 'Accuracy', alpha_filter, legitimate_plots=True, verbose=verbose)
     analyzer.generate_metric_plots('local_max_acc', 'Accuracy', alpha_filter, legitimate_plots=True, verbose=verbose)
     
     # Generate stake plots
