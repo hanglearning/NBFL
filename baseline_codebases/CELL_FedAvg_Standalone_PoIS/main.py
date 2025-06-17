@@ -130,6 +130,8 @@ if __name__ == "__main__":
                                               batch_size=args.batch_size,
                                               alpha=args.alpha_dirichlet,
                                               dataloader_workers=args.num_workers)
+    background = None
+    test_images = None
     ''' PoIS code '''        
     if args.PoIS:
         # https://github.com/harshkasyap/DecFL/blob/master/Non%20IID/dirichlet%20distribution/vary%20attacker/fm_noniid_ba_9.py
@@ -234,7 +236,7 @@ if __name__ == "__main__":
         pickle.dump(args, f)
 
     for comm_round in range(1, args.rounds+1):
-        server.update(comm_round, logger, background=background, test_images=test_images)
+        server.update(comm_round, logger, background, test_images)
         # save logger
         with open(f'{args.log_dir}/logger.pickle', 'wb') as f:
             pickle.dump(logger, f)

@@ -75,8 +75,8 @@ class Server():
         self,
         comm_round,
         logger,
-        background = None,
-        test_images = None,
+        background,
+        test_images,
         *args,
         **kwargs
     ):
