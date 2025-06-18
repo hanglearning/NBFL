@@ -16,10 +16,10 @@
             "name": "CELL",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone/main.py",
+            "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone_PoIS/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--CELL", "1", "--n_malicious", "3", "--seed", "30", "--epochs", "100", "--rewind", "0", "--attack_type", "4", "--total_samples", "200", "--alpha_dirichlet", "1.0", "--dataset_mode", "non-iid"]
+            "args": ["--CELL", "1", "--n_malicious", "3", "--seed", "50", "--epochs", "100", "--rewind", "0", "--attack_type", "4", "--total_samples", "200", "--alpha_dirichlet", "1.0", "--dataset_mode", "non-iid"]
         },
         {
             "name": "LotteryFL",
@@ -34,7 +34,7 @@
             "name": "standalone_LTH",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone/main.py",
+            "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone_PoIS/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["--standalone_LTH", "1", "--n_malicious", "0", "--seed", "30", "--epochs", "100", "--rewind", "0", "--attack_type", "0", "--total_samples", "200", "--alpha_dirichlet", "1.0", "--acc_drop_threshold", "0.05", "--dataset_mode", "non-iid"]
@@ -43,7 +43,7 @@
             "name": "PoIS",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone/main.py",
+            "program": "${workspaceFolder}/baseline_codebases/CELL_FedAvg_Standalone_PoIS/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["--PoIS", "1", "--n_malicious", "10", "--seed", "30", "--total_samples", "200", "--alpha", "1.0", "--dataset_mode", "non-iid", "--attack_type", "4"]

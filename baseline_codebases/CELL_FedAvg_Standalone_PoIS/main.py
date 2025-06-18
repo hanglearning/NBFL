@@ -129,7 +129,8 @@ if __name__ == "__main__":
                                               mode=args.dataset_mode,
                                               batch_size=args.batch_size,
                                               alpha=args.alpha_dirichlet,
-                                              dataloader_workers=args.num_workers)
+                                              dataloader_workers=args.num_workers,
+                                              call_from_CELL=True)
     background = None
     test_images = None
     ''' PoIS code '''        
