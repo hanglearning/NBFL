@@ -26,234 +26,23 @@ from update import LocalUpdate, test_inference
 from datetime import datetime
 import pickle
 
-def expand_with_val_test_data(original_train_loader, device_id, log_dirpath, seed, dataset_name, globally_used_indices):
-    """
-    Expand the training data from DataLoaders (80% of total) by adding 20% more data
-    from the same MNIST dataset with same labels, ensuring no overlap with any other device.
-    Split the extra 20% into 10% val + 10% test.
-    
-    Args:
-        original_train_loader: DataLoader from DataLoaders function (this is our 80% train data)
-        device_id: Client device ID
-        log_dirpath: Directory for logging
-        seed: Random seed for reproducibility
-        dataset_name: Name of dataset (e.g., 'mnist')
-        globally_used_indices: Set of all indices already used across all devices
-        
-    Returns:
-        tuple: (train_loader, val_loader, local_test_loader, split_info)
-    """
-    np.random.seed(seed + device_id)  # Ensure different expansion per device
-    
-    # Load the full MNIST dataset to get additional samples
-    if dataset_name == 'mnist':
-        data_dir = './data'
-        apply_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
-        ])
-        full_dataset = tv.datasets.MNIST(data_dir, train=True, download=False, transform=apply_transform)
-    else:
-        raise NotImplementedError(f"Dataset {dataset_name} not supported yet")
-    
-    # Get the indices already used by this client from DataLoaders (this is our 80% train data)
-    if hasattr(original_train_loader.sampler, 'indices'):
-        used_train_indices = set(original_train_loader.sampler.indices)
-    else:
-        used_train_indices = set(list(original_train_loader.sampler))
-    
-    # Get the labels that this client has in their training data
-    train_labels = [full_dataset.targets[idx] for idx in used_train_indices]
-    client_labels = sorted(list(set([int(label) for label in train_labels])))  # Convert tensors to int and get unique
-    
-    print(f"Expanding val and test samples for device {device_id + 1}")
-    
-    if False:  # Verbose logging - set to True for debugging
-        print(f"Device {device_id + 1}: Train data has {len(used_train_indices)} samples with labels {client_labels}")
-    
-    # Find all available indices for each label that this client has, excluding ALL globally used indices
-    available_indices_by_label = {}
-    for label in client_labels:
-        # Get all indices in full dataset that have this label
-        all_indices_for_label = [i for i, target in enumerate(full_dataset.targets) if int(target) == label]
-        # Remove indices already used GLOBALLY (across all devices)
-        available_indices = [i for i in all_indices_for_label if i not in globally_used_indices]
-        available_indices_by_label[label] = available_indices
-        
-        if False:  # Verbose logging - set to True for debugging
-            print(f"Device {device_id + 1}: Label {label} - Available unused indices globally: {len(available_indices)}")
-    
-    # Calculate how many additional samples we need (20% more than current training data)
-    current_train_size = len(used_train_indices)
-    additional_needed = int(current_train_size * 0.25)  # 20% / 80% = 0.25
-    val_size = additional_needed // 2
-    test_size = additional_needed - val_size
-    
-    if False:  # Verbose logging - set to True for debugging
-        print(f"Device {device_id + 1}: Need {additional_needed} additional samples ({val_size} val + {test_size} test)")
-    
-    # Collect all available indices ensuring each label gets at least 1 val and 1 test sample
-    # This ensures better evaluation coverage while still following LotteryFL's simple approach
-    val_indices = []
-    test_indices = []
-    
-    # Check if we can guarantee 1 sample per label for both val and test
-    min_samples_needed = len(client_labels) * 2  # 1 for val + 1 for test per label
-    
-    # Always try to guarantee representation since we have enough MNIST data
-    remaining_val_needed = val_size
-    remaining_test_needed = test_size
-    
-    # First pass: ensure each label gets at least 1 sample in val and 1 in test
-    for label in client_labels:  # Now iterating through unique labels only
-        available_for_label = available_indices_by_label[label]
-        
-        if len(available_for_label) >= 2 and remaining_val_needed > 0 and remaining_test_needed > 0:
-            np.random.shuffle(available_for_label)
-            # Take 1 for val, 1 for test
-            val_indices.append(available_for_label[0])
-            test_indices.append(available_for_label[1])
-            # Remove these from available pool
-            available_indices_by_label[label] = available_for_label[2:]
-            remaining_val_needed -= 1
-            remaining_test_needed -= 1
-        elif len(available_for_label) >= 1:
-            # Only 1 sample available, prioritize the set with more remaining need
-            if remaining_val_needed >= remaining_test_needed and remaining_val_needed > 0:
-                val_indices.append(available_for_label[0])
-                remaining_val_needed -= 1
-            elif remaining_test_needed > 0:
-                test_indices.append(available_for_label[0])
-                remaining_test_needed -= 1
-            available_indices_by_label[label] = available_for_label[1:]
-    
-    # Collect remaining available indices for random distribution
-    remaining_available_indices = []
-    for label in client_labels:
-        remaining_available_indices.extend(available_indices_by_label[label])
-    
-    # Shuffle remaining indices
-    np.random.shuffle(remaining_available_indices)
-    
-    # Distribute remaining samples to reach exact target counts
-    additional_val_needed = min(remaining_val_needed, len(remaining_available_indices))
-    val_indices.extend(remaining_available_indices[:additional_val_needed])
-    
-    additional_test_needed = min(remaining_test_needed, len(remaining_available_indices) - additional_val_needed)
-    test_indices.extend(remaining_available_indices[additional_val_needed:additional_val_needed + additional_test_needed])
-    
-    if False:  # Verbose logging - set to True for debugging
-        print(f"Device {device_id + 1}: Successfully allocated {len(val_indices)} val + {len(test_indices)} test samples")
-        print(f"Device {device_id + 1}: Target was {val_size} val + {test_size} test")
-    
-    # Convert used_train_indices back to list for consistency
-    train_indices = list(used_train_indices)
-    
-    # Verify no overlap between val and test indices (train_indices are separate/pre-existing)
-    val_test_indices = set(val_indices) | set(test_indices)
-    assert len(val_test_indices) == len(val_indices) + len(test_indices), "Val/Test index overlap detected!"
-    
-    # Verify val and test indices don't overlap with training indices
-    overlap_with_train = set(val_indices) & set(train_indices)
-    overlap_with_train.update(set(test_indices) & set(train_indices))
-    assert len(overlap_with_train) == 0, f"Val/Test indices overlap with training indices: {len(overlap_with_train)} overlaps found!"
-    
-    # Create data loaders
-    batch_size = original_train_loader.batch_size
-    num_workers = original_train_loader.num_workers
-    
-    # Training loader: keep the original (80% of total data)
-    train_loader = original_train_loader
-    
-    # Validation loader: 10% of total data, new samples
-    val_loader = DataLoader(
-        full_dataset,
-        sampler=SubsetRandomSampler(val_indices),
-        batch_size=batch_size,
-        num_workers=num_workers
-    ) if val_indices else None
-    
-    # Test loader: 10% of total data, new samples  
-    local_test_loader = DataLoader(
-        full_dataset,
-        sampler=SubsetRandomSampler(test_indices),
-        batch_size=batch_size,
-        num_workers=num_workers
-    ) if test_indices else None
-    
-    # Calculate final statistics
-    total_train = len(train_indices)
-    total_val = len(val_indices)
-    total_test = len(test_indices)
-    total_samples = total_train + total_val + total_test
-    
-    # Get label distribution for each split
-    train_labels_final = [full_dataset.targets[idx] for idx in train_indices]
-    val_labels_final = [full_dataset.targets[idx] for idx in val_indices] if val_indices else []
-    test_labels_final = [full_dataset.targets[idx] for idx in test_indices] if test_indices else []
-    
-    train_label_counts_final = np.bincount(train_labels_final, minlength=10)
-    val_label_counts_final = np.bincount(val_labels_final, minlength=10) if val_labels_final else np.zeros(10)
-    test_label_counts_final = np.bincount(test_labels_final, minlength=10) if test_labels_final else np.zeros(10)
-    
-    split_info = {
-        'total_samples': total_samples,
-        'train_size': total_train,
-        'val_size': total_val,
-        'test_size': total_test,
-        'train_labels': dict(enumerate(train_label_counts_final)),
-        'val_labels': dict(enumerate(val_label_counts_final)),
-        'test_labels': dict(enumerate(test_label_counts_final)),
-        'client_labels': sorted(client_labels),
-        'expansion_successful': total_val > 0 and total_test > 0,
-        'val_indices': val_indices,  # Return indices for global tracking
-        'test_indices': test_indices  # Return indices for global tracking
-    }
-    
-    # Log the expansion information
-    log_msg = f"Device {device_id + 1} Data Expansion - Total: {total_samples}, "
-    log_msg += f"Train: {total_train} ({total_train/total_samples*100:.1f}%), "
-    log_msg += f"Val: {total_val} ({total_val/total_samples*100:.1f}%), "
-    log_msg += f"Test: {total_test} ({total_test/total_samples*100:.1f}%)"
-    
-    train_dist_msg = f"Device {device_id + 1} Final Train label distribution: {dict(enumerate(train_label_counts_final))}"
-    val_dist_msg = f"Device {device_id + 1} Final Val label distribution: {dict(enumerate(val_label_counts_final))}"
-    test_dist_msg = f"Device {device_id + 1} Final Test label distribution: {dict(enumerate(test_label_counts_final))}"
-    
-    with open(f"{log_dirpath}/data_expansion_log.txt", "a") as f:
-        f.write(f"{log_msg}\n")
-        f.write(f"{train_dist_msg}\n")
-        f.write(f"{val_dist_msg}\n") 
-        f.write(f"{test_dist_msg}\n\n")
-    
-    if False:  # Verbose logging - set to True for debugging
-        print(log_msg)
-        print(train_dist_msg)
-        if val_indices:
-            print(val_dist_msg)
-        if test_indices:
-            print(test_dist_msg)
-    
-    return train_loader, val_loader, local_test_loader, split_info
-
 
 class LotteryFLLocalUpdate(object):
     """
-    LocalUpdate class that follows original LotteryFL structure but handles train/val/test splits
+    Simplified LocalUpdate class using train/test loaders from DataLoaders function
     """
-    def __init__(self, args, trainloader, validloader, local_testloader, global_testloader, device_id):
+    def __init__(self, args, trainloader, testloader, global_testloader, device_id):
         self.args = args
         self.trainloader = trainloader
-        self.validloader = validloader
-        self.local_testloader = local_testloader  # Local test set (10% of client's expanded data)
-        self.global_testloader = global_testloader  # Global test set (same as original)
+        self.testloader = testloader  # Local test set from DataLoaders
+        self.global_testloader = global_testloader  # Global test set
         self.device_id = device_id
         self.device = 'cuda' if args.gpu else 'cpu'
         self.criterion = nn.NLLLoss().to(self.device)
 
     def update_weights(self, model, epochs, device):
         """
-        Original LotteryFL update_weights logic with enhanced model tracking
+        Original LotteryFL update_weights logic
         """
         EPS = 1e-6
         model.train()
@@ -326,13 +115,13 @@ class LotteryFLLocalUpdate(object):
         """
         Original LotteryFL inference method - uses local test set and limits to 2 batches
         """
-        if self.local_testloader is None:
+        if self.testloader is None:
             return 0.0, 0.0
             
         model.eval()
         loss, total, correct = 0.0, 0.0, 0.0
 
-        for batch_idx, (images, labels) in enumerate(self.local_testloader):
+        for batch_idx, (images, labels) in enumerate(self.testloader):
             # Original LotteryFL: each client test 100 images at most for running time
             if batch_idx > 1:
                 break
@@ -350,22 +139,16 @@ class LotteryFLLocalUpdate(object):
         accuracy = correct/total if total > 0 else 0.0
         return accuracy, loss
 
-    # Additional evaluation methods for comprehensive logging
+    # Additional evaluation methods
     def evaluate_on_train(self, model):
         """Evaluate model on training set"""
         return test_by_data_set(model, self.trainloader, self.device, verbose=False)['MulticlassAccuracy'][0]
     
-    def evaluate_on_validation(self, model):
-        """Evaluate model on validation set"""
-        if self.validloader is None:
-            return 0.0
-        return test_by_data_set(model, self.validloader, self.device, verbose=False)['MulticlassAccuracy'][0]
-    
     def evaluate_on_local_test(self, model):
         """Evaluate model on local test set (full evaluation, not limited to 2 batches)"""
-        if self.local_testloader is None:
+        if self.testloader is None:
             return 0.0
-        return test_by_data_set(model, self.local_testloader, self.device, verbose=False)['MulticlassAccuracy'][0]
+        return test_by_data_set(model, self.testloader, self.device, verbose=False)['MulticlassAccuracy'][0]
     
     def evaluate_on_global_test(self, model):
         """Evaluate model on global test set"""
@@ -453,10 +236,9 @@ if __name__ == '__main__':
     set_seed(args.seed)
     print(f"Seed set: {args.seed}")
 
-    # Get original data loaders from DataLoaders function 
-    # This gives us the 80% training data for each client
-    print("\n=== Getting Base Training Data from DataLoaders (80% of target) ===")
-    original_train_loaders, original_test_loaders, user_labels, global_test_loader = DataLoaders(
+    # Get train and test loaders from DataLoaders function
+    print("\n=== Getting Data from DataLoaders Function ===")
+    train_loaders, test_loaders, user_labels, global_test_loader = DataLoaders(
         n_devices=args.n_clients,
         dataset_name=args.dataset,
         total_samples=args.total_samples,
@@ -465,60 +247,17 @@ if __name__ == '__main__':
         mode=args.dataset_mode,
         batch_size=args.batch_size,
         alpha=args.alpha,
-        dataloader_workers=args.num_workers
+        dataloader_workers=args.num_workers,
+        need_test_loaders=True
     )
 
-    # Expand each client's data by adding 20% more (10% val + 10% test) from MNIST
-    # Track globally used indices to prevent overlap between devices
-    print("\n=== Expanding Data: Adding 20% (10% val + 10% test) from MNIST ===")
-    train_loaders = []
-    val_loaders = []
-    local_test_loaders = []
-    split_infos = []
-    
-    # Track all indices used across all devices to prevent overlap
-    globally_used_indices = set()
-    
-    # First, collect all training indices from all devices
-    for device_id in range(args.n_clients):
-        if hasattr(original_train_loaders[device_id].sampler, 'indices'):
-            device_train_indices = set(original_train_loaders[device_id].sampler.indices)
-        else:
-            device_train_indices = set(list(original_train_loaders[device_id].sampler))
-        globally_used_indices.update(device_train_indices)
-    
-    print(f"Total training indices used across all devices: {len(globally_used_indices)}")
-
-    for device_id in range(args.n_clients):
-        # Expand data: keep 80% train from DataLoaders, add 10% val + 10% test from MNIST
-        train_loader, val_loader, local_test_loader, split_info = expand_with_val_test_data(
-            original_train_loaders[device_id], 
-            device_id, 
-            args.log_dir, 
-            args.seed,
-            args.dataset,
-            globally_used_indices  # Pass global tracking
-        )
-        
-        # Update globally used indices with val and test indices from this device
-        if split_info['val_indices']:
-            globally_used_indices.update(split_info['val_indices'])
-        if split_info['test_indices']:
-            globally_used_indices.update(split_info['test_indices'])
-        
-        train_loaders.append(train_loader)
-        val_loaders.append(val_loader)
-        local_test_loaders.append(local_test_loader)
-        split_infos.append(split_info)
-
-    # Logger structure following original LotteryFL but with enhanced metrics
+    # Logger structure following original LotteryFL
     logger = {}
     logger['global_test_acc'] = {r: {} for r in range(1, args.epochs + 1)}
     logger['global_model_sparsity'] = {r: {} for r in range(1, args.epochs + 1)}
     logger['local_train_acc'] = {r: {} for r in range(1, args.epochs + 1)}
-    logger['local_val_acc'] = {r: {} for r in range(1, args.epochs + 1)}
     logger['local_test_acc'] = {r: {} for r in range(1, args.epochs + 1)}
-    logger['local_max_acc'] = {r: {} for r in range(1, args.epochs + 1)}  # Added back
+    logger['local_max_acc'] = {r: {} for r in range(1, args.epochs + 1)}
 
     # save args
     with open(f'{args.log_dir}/args.pickle', 'wb') as f:
@@ -554,12 +293,11 @@ if __name__ == '__main__':
         for idx in user_pbar:
             user_pbar.set_description(f"Round {epoch+1} - User {idx + 1}")
 
-            # Use LotteryFL-compatible LocalUpdate with proper train/val/test splits
+            # Use simplified LocalUpdate with train/test loaders from DataLoaders
             local_model = LotteryFLLocalUpdate(
                 args=args, 
                 trainloader=train_loaders[idx],
-                validloader=val_loaders[idx], 
-                local_testloader=local_test_loaders[idx],
+                testloader=test_loaders[idx],
                 global_testloader=global_test_loader,
                 device_id=idx
             )
@@ -621,11 +359,10 @@ if __name__ == '__main__':
             local_prune.append(pruning_rate[idx])
             local_acc.append(acc)      
 
-            # Enhanced logging with all evaluation metrics
+            # Enhanced logging
             logger['local_train_acc'][epoch + 1][idx] = local_model.evaluate_on_train(temp_model)
-            logger['local_val_acc'][epoch + 1][idx] = local_model.evaluate_on_validation(temp_model)
             logger['local_test_acc'][epoch + 1][idx] = local_model.evaluate_on_local_test(temp_model)
-            logger['local_max_acc'][epoch + 1][idx] = test_by_data_set(temp_model, local_model.trainloader, device, verbose=False)['MulticlassAccuracy'][0]  # Added back
+            logger['local_max_acc'][epoch + 1][idx] = test_by_data_set(temp_model, local_model.trainloader, device, verbose=False)['MulticlassAccuracy'][0]
 
         user_pbar.close()
         print("local accuracy: {}\n".format(sum(local_acc)/len(local_acc)))
@@ -651,9 +388,6 @@ if __name__ == '__main__':
         if (epoch + 1) % print_every == 0:
             avg_train_acc = np.mean([logger['local_train_acc'][epoch + 1][idx] 
                                    for idx in logger['local_train_acc'][epoch + 1]])
-            avg_val_acc = np.mean([logger['local_val_acc'][epoch + 1][idx] 
-                                 for idx in logger['local_val_acc'][epoch + 1] 
-                                 if logger['local_val_acc'][epoch + 1][idx] > 0])
             avg_local_test_acc = np.mean([logger['local_test_acc'][epoch + 1][idx] 
                                         for idx in logger['local_test_acc'][epoch + 1] 
                                         if logger['local_test_acc'][epoch + 1][idx] > 0])
@@ -662,7 +396,6 @@ if __name__ == '__main__':
             
             print(f"\n=== Epoch {epoch + 1} Summary ===")
             print(f"Average Train Accuracy: {avg_train_acc:.4f}")
-            print(f"Average Validation Accuracy: {avg_val_acc:.4f}")
             print(f"Average Local Test Accuracy: {avg_local_test_acc:.4f}")
             print(f"Average Global Test Accuracy: {avg_global_test_acc:.4f}")
             print(f"Communication Cost Saved: {100*(1-communication_cost_epoch):.2f}%")

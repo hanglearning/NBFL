@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 # from dataset.mnist_noniid import get_dataset_mnist_extr_noniid, mnist_extr_noniid
 
 
-def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1, call_from_CELL=False):
+def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1, need_test_loaders=False):
     if mode == "non-iid":
         if dataset_name == "mnist":
             return get_data_noniid_mnist(n_devices,
@@ -20,7 +20,7 @@ def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode=
                                          alpha,
                                          dataloader_workers,
                                          mode,
-                                         call_from_CELL)
+                                         need_test_loaders)
         elif dataset_name == "cifar10":
             return get_data_noniid_cifar10(n_devices,
                                            total_samples,
@@ -29,7 +29,7 @@ def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode=
                                            batch_size,
                                            alpha,
                                            dataloader_workers,
-                                           call_from_CELL)
+                                           need_test_loaders)
     elif mode == 'iid':
         if dataset_name == 'cifar10':
             data_dir = './data'
@@ -41,7 +41,7 @@ def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode=
 
             test_dataset = tv.datasets.CIFAR10(data_dir, train=False, download=True,
                                                transform=apply_transform)
-            return iid_split(n_devices, train_dataset, batch_size, test_dataset, dataloader_workers, log_dirpath, total_samples)
+            return iid_split(n_devices, train_dataset, batch_size, test_dataset, dataloader_workers, log_dirpath, total_samples, need_test_loaders)
         elif dataset_name == 'mnist':
             data_dir = './data'
             apply_transform = transforms.Compose([
@@ -52,16 +52,17 @@ def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode=
 
             test_dataset = tv.datasets.MNIST(data_dir, train=False, download=True,
                                              transform=apply_transform)
-            return iid_split(n_devices, train_dataset, batch_size, test_dataset, dataloader_workers, log_dirpath, total_samples)
+            return iid_split(n_devices, train_dataset, batch_size, test_dataset, dataloader_workers, log_dirpath, total_samples, need_test_loaders)
 
 
 def iid_split(n_clients,
               train_data,
-              batch_size, test_data, dataloader_workers, log_dirpath, total_samples):
+              batch_size, test_data, dataloader_workers, log_dirpath, total_samples, need_test_loaders):
 
     labels = np.array(train_data.targets)
     samples_per_label = total_samples // 10  # assume 10 labels
     
+    # ===== TRAINING DATA ASSIGNMENT (UNCHANGED) =====
     idx_by_label = {l: np.where(labels == l)[0] for l in range(10)}
     for l in idx_by_label:
         np.random.shuffle(idx_by_label[l])
@@ -73,10 +74,60 @@ def iid_split(n_clients,
             sample_train_idx[i].extend(take)
             idx_by_label[l] = idx_by_label[l][samples_per_label:]
 
-    all_test_idx = np.arange(test_data.data.shape[0])
+    # ===== TEST DATA ASSIGNMENT (NEW - MATCHING CELL BEHAVIOR) =====
+    # Create test index pools for proportional allocation
+    test_idx_by_class = {k: np.where(np.array(test_data.targets) == k)[0].tolist() for k in range(10)}
+    for k in test_idx_by_class:
+        np.random.shuffle(test_idx_by_class[k])
+    
+    sample_test_idx = [[] for _ in range(n_clients)]
+    
+    for i in range(n_clients):
+        # Get the actual training distribution for this device
+        train_indices = sample_train_idx[i]
+        train_labels_arr = np.array(train_data.targets)[train_indices]
+        train_class_counts = np.bincount(train_labels_arr, minlength=10)
+        train_total = len(train_indices)
+        
+        if train_total == 0:
+            continue
+            
+        # Calculate test sample size as 25% of training samples
+        test_total_needed = int(train_total * 0.25)
+        
+        # Assign test data with same proportions as training data
+        assigned_test_samples = 0
+        for label in range(10):
+            if train_class_counts[label] == 0:
+                continue
+                
+            # Calculate how many test samples needed for this label
+            label_proportion = train_class_counts[label] / train_total
+            label_test_needed = int(label_proportion * test_total_needed)
+            
+            # Take samples from test data for this label
+            available_test_samples = len(test_idx_by_class[label])
+            take = min(label_test_needed, available_test_samples)
+            
+            if take > 0:
+                selected_test = test_idx_by_class[label][:take]
+                test_idx_by_class[label] = test_idx_by_class[label][take:]
+                sample_test_idx[i].extend(selected_test)
+                assigned_test_samples += take
+        
+        # Fill any remaining slots if we're short due to rounding
+        remaining_needed = test_total_needed - assigned_test_samples
+        if remaining_needed > 0:
+            # Fill from labels that this device actually has in training
+            device_labels = [label for label in range(10) if train_class_counts[label] > 0]
+            for label in device_labels:
+                if remaining_needed <= 0:
+                    break
+                if len(test_idx_by_class[label]) > 0:
+                    sample_test_idx[i].append(test_idx_by_class[label].pop())
+                    remaining_needed -= 1
 
-    sample_test_idx = np.array_split(all_test_idx, n_clients)
-
+    # ===== CREATE DATA LOADERS =====
     user_train_loaders = []
     user_test_loaders = []
 
@@ -85,30 +136,49 @@ def iid_split(n_clients,
                                                               sampler=torch.utils.data.SubsetRandomSampler(
                                                                   idx),
                                                               batch_size=batch_size, num_workers=dataloader_workers))
+    
     for idx in sample_test_idx:
-        user_test_loaders.append(torch.utils.data.DataLoader(test_data,
-                                                             sampler=torch.utils.data.SubsetRandomSampler(
-                                                                 idx),
-                                                             batch_size=batch_size, num_workers=dataloader_workers))
+        if len(idx) > 0:
+            user_test_loaders.append(torch.utils.data.DataLoader(test_data,
+                                                                 sampler=torch.utils.data.SubsetRandomSampler(
+                                                                     idx),
+                                                                 batch_size=batch_size, num_workers=dataloader_workers))
+        else:
+            # If no test data assigned, create empty loader
+            user_test_loaders.append(torch.utils.data.DataLoader(test_data,
+                                                                 sampler=torch.utils.data.SubsetRandomSampler([]),
+                                                                 batch_size=batch_size, num_workers=dataloader_workers))
+    
+    # ===== LOGGING =====
     user_label_to_qty = {}
-    for i, loader in enumerate(user_train_loaders):
+    for i, (train_loader, test_idx) in enumerate(zip(user_train_loaders, sample_test_idx)):
         labels = []
-        for batch in loader:
+        for batch in train_loader:
             _, targets = batch
             labels.extend(targets.numpy().tolist())
         unique_labels = sorted(list(set(labels)))
-        # user_labels.append(unique_labels)
         class_counts = np.bincount(np.array(labels), minlength=10)
-        msg = f"Device {i + 1} label distribution: {dict(enumerate(class_counts))}"
+        
+        # Also log test distribution for verification
+        if len(test_idx) > 0:
+            test_labels_arr = np.array(test_data.targets)[test_idx]
+            test_class_counts = np.bincount(test_labels_arr, minlength=10)
+        else:
+            test_class_counts = np.zeros(10)
+        
+        msg = f"Device {i + 1} train label distribution: {dict(enumerate(class_counts))}"
+        if need_test_loaders:
+            msg += f", test label distribution: {dict(enumerate(test_class_counts))}"
         with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
             f.write(f"{msg}\n")
         print(msg)
         user_label_to_qty[i] = dict(enumerate(class_counts))
+    
     global_test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=dataloader_workers)
     return user_train_loaders, user_test_loaders, user_label_to_qty, global_test_loader
 
 
-def get_data_noniid_cifar10(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, call_from_CELL=False):
+def get_data_noniid_cifar10(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, need_test_loaders=False):
     data_dir = './data'
     apply_transform = transforms.Compose([
         transforms.ToTensor(),
@@ -174,7 +244,7 @@ def get_data_noniid_cifar10(n_devices, total_samples, log_dirpath, seed, batch_s
 
 # NBFL - Modified to match CELL test_loader behavior while preserving exact same train_loaders
 
-def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, dataset_mode="non-iid", call_from_CELL=False):
+def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, dataset_mode="non-iid", need_test_loaders=False):
     import os
     data_dir = './data'
     apply_transform = transforms.Compose([
@@ -321,7 +391,7 @@ def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_siz
             test_class_counts = np.zeros(10)
         
         msg = f"Device {i + 1} train label distribution: {dict(enumerate(class_counts))}"
-        if call_from_CELL:
+        if need_test_loaders:
             msg += f", test label distribution: {dict(enumerate(test_class_counts))}"
         with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
             f.write(f"{msg}\n")

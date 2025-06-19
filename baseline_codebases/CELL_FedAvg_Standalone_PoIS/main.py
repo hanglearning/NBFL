@@ -102,6 +102,7 @@ if __name__ == "__main__":
     if args.dataset_mode == 'iid':
         args.alpha_dirichlet = '∞'
 
+    need_test_loaders = False
     # from POLL_march_23_toy
     if args.standalone_LTH:
         run_name = "STANDALONE_LTH" # Pure Centralized
@@ -111,6 +112,7 @@ if __name__ == "__main__":
         run_name = "PoIS"
     if args.CELL:
         run_name = "CELL"
+        need_test_loaders = True
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
 
@@ -130,7 +132,7 @@ if __name__ == "__main__":
                                               batch_size=args.batch_size,
                                               alpha=args.alpha_dirichlet,
                                               dataloader_workers=args.num_workers,
-                                              call_from_CELL=True)
+                                              need_test_loaders=need_test_loaders)
     background = None
     test_images = None
     ''' PoIS code '''        
