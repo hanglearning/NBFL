@@ -321,7 +321,8 @@ if __name__ == '__main__':
                 #update pruning rate
                 pruning_rate[idx] = pruning_rate[idx] * (1 - args.prune_percent/100)
                 #reset to initial value to make lottery tickets
-                mask_model(train_model, masks[idx], init_weights)
+                if args.rewind:
+                    mask_model(train_model, masks[idx], init_weights)
 
             # Handle malicious users (same as original)
             if idx >= args.n_clients - args.n_malicious:

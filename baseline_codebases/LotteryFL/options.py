@@ -56,6 +56,8 @@ def args_parser():
                         help='pruning end rate')
     parser.add_argument('--mask_ratio', type=float, default=0.5,
                         help='mask ratio')
+    parser.add_argument('--rewind', type=float, default=1,
+                        help='reset model to initial weights')
     # other arguments
     # parser.add_argument('--dataset', type=str, default='mnist_extr_noniid', help="name \
     #                     of dataset")
