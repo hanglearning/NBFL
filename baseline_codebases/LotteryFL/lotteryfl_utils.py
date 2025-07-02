@@ -13,27 +13,6 @@ from torchmetrics import MetricCollection, Accuracy, Precision, Recall
 import torch.nn.utils.prune as prune
 from torch import nn
 
-def get_dataset_femnist(data_dir):
-    data_x_train, data_y_train, user_group_train, data_x_test, data_y_test, user_group_test = read_data_json(data_dir)
-    apply_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))])
-    dataset_train = FemnistDataset(data_x_train, data_y_train, apply_transform)
-    dataset_test = FemnistDataset(data_x_test, data_y_test, apply_transform)
-    return dataset_train, dataset_test, user_group_train, user_group_test
-
-def get_dataset_HAR(data_dir, num_samples):
-    data_x_train, data_y_train, user_group_train, data_x_test, data_y_test, user_group_test = read_data_HAR(data_dir, num_samples)
-    dataset_train = HARDataset(data_x_train, data_y_train)
-    dataset_test = HARDataset(data_x_test, data_y_test)
-    return dataset_train, dataset_test, user_group_train, user_group_test
-
-def get_dataset_HAD(data_dir, num_samples):
-    data_x_train, data_y_train, user_group_train, data_x_test, data_y_test, user_group_test = read_data_HAD(data_dir, num_samples)
-    dataset_train = HADDataset(data_x_train, data_y_train)
-    dataset_test = HADDataset(data_x_test, data_y_test)
-    return dataset_train, dataset_test, user_group_train, user_group_test
-
 def get_dataset_cifar10_extr_noniid(n_clients, n_labels, total_samples, alpha):
     data_dir = '../data/cifar/'
     apply_transform = transforms.Compose(
@@ -62,21 +41,6 @@ def get_dataset_mnist_extr_noniid(n_clients, n_labels, total_samples, alpha):
 
     # Chose euqal splits for every user
     user_groups_train, user_groups_test = mnist_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, total_samples, alpha)
-    return train_dataset, test_dataset, user_groups_train, user_groups_test
-
-def get_dataset_miniimagenet_extr_noniid(n_clients, n_labels, total_samples, alpha):
-    data_dir = '../dataset/mini-imagenet/'
-    apply_transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])])
-    train_dataset = MiniImagenetDataset(mode = 'train', root = data_dir,
-                                   transform=apply_transform)
-
-    test_dataset = MiniImagenetDataset(mode = 'test', root = data_dir,
-                                      transform=apply_transform)
-
-    # Chose euqal splits for every user
-    user_groups_train, user_groups_test = miniimagenet_extr_noniid(train_dataset, test_dataset, n_clients, n_labels, total_samples, alpha)
     return train_dataset, test_dataset, user_groups_train, user_groups_test
 
 def get_dataset(args):

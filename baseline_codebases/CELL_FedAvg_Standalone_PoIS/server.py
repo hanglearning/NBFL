@@ -1,4 +1,3 @@
-import wandb
 from typing import List, Dict, Tuple
 import torch.nn.utils.prune as prune
 import numpy as np
@@ -171,12 +170,6 @@ class Server():
                 if flag == True:
                     print('client {} is aggregated'.format(id))
                     models_to_aggregate.append(copy.copy(model))
-       
-        # avg_accuracy = np.mean(accs, axis=0, dtype=np.float32)
-        # print('-----------------------------', flush=True)
-        # print(f'| Average Accuracy: {avg_accuracy}  | ', flush=True)
-        # print('-----------------------------', flush=True)
-        # wandb.log({"client_avg_acc": avg_accuracy})
 
         # compute average-model
         if self.args.PoIS:

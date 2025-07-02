@@ -278,23 +278,6 @@ class Client():
 
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
-        # wandb.log({f"{self.idx}_{self._user_labels}_after_pruning_sparsity": 1 - self.prune_rates[-1], "comm_round": comm_round})
-        # wandb.log({f"{self.idx}_{self._user_labels}_after_pruning_acc": metrics['MulticlassAccuracy'][0], "comm_round": comm_round})
-        # wandb.log({f"{self.idx}_{self._user_labels}_after_pruning_local_test_acc": self.eval_model_by_local_test(self.model), "comm_round": comm_round})
-        # wandb.log({f"{self.idx}_{self._user_labels}_after_pruning_global_test_acc": self.eval_model_by_global_test(self.model), "comm_round": comm_round})
-  
-
-        # wandb.log({f"{self.idx}_cur_prune_rate": self.cur_prune_rate})
-        # wandb.log({f"{self.idx}_eita": self.eita})
-        # wandb.log(
-        #     {f"{self.idx}_percent_pruned": self.prune_rates[-1]})
-
-        # for key, thing in metrics.items():
-        #     if(isinstance(thing, list)):
-        #         wandb.log({f"{self.idx}_{key}": thing[0]})
-        #     else:
-        #         wandb.log({f"{self.idx}_{key}": thing})
-
         if (self.elapsed_comm_rounds+1) % self.args.save_freq == 0:
             self.save(self.model)
 
