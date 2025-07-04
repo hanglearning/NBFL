@@ -338,7 +338,7 @@ class Device():
             self.worker_to_top_grad_magnitudes_overlap_percent = {k: v for k, v in zip(self.worker_to_top_grad_magnitudes_overlap_percent.keys(), reversed(self.worker_to_top_grad_magnitudes_overlap_percent.values()))}
             # and assign itself the legitimate values
             self.worker_to_acc_diff[self.idx] = self_acc_diff # cannot cheat, will be reconstructed by other validators
-            self.worker_to_euc_dist[self.idx] = self_euc_dist # cannot cheat, verifiablen by other devices
+            self.worker_to_euc_dist[self.idx] = self_euc_dist # cannot cheat, verifiable by other devices
             self.worker_to_mask_overlap_percent[self.idx] = self_mask_overlap_percent # cannot cheat, equal to its own pruning percentage over unpruned area, also the largest
             self.worker_to_top_grad_magnitudes_overlap_percent[self.idx] = self_top_grad_magnitudes_overlap_percent # cannot cheat, verifiable by other devices
 

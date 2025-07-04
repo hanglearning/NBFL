@@ -306,7 +306,7 @@ def main():
 
         print(f"\nWorkers {[worker.idx for worker in online_workers]} have broadcasted worker transactions to validators.")
 
-        ''' Phase 2 - Validators Model Validation and Exchange Votes '''
+        ''' Phase 2 - Validators Model Validation and Exchange Validation Results '''
         # workers volunteer to become validators
         
         online_validators = []
@@ -323,7 +323,7 @@ def main():
             
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]
-            # validate model based on accuracy
+            # validate models
             validator.validate_models()
             # make validator transaction
             validator.make_validator_tx()
