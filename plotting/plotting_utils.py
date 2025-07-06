@@ -317,20 +317,20 @@ class NBFLLogAnalyzer:
             if verbose:
                 print(f"Processing: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}, rewind={rewind}, ndevices={ndevices}, nsamples={nsamples}, rounds={rounds}")
             
-            # Find matching NBFL configuration key
+            # Find all available methods for this configuration
+            available_methods = []
+            all_method_logs = {}
+            
+            # Check for NBFL logs
             nbfl_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
+            if nbfl_config_key in config_groups:
+                available_methods.append('NBFL')
+                all_method_logs['NBFL'] = config_groups[nbfl_config_key]
+                if verbose:
+                    print(f"Found {len(config_groups[nbfl_config_key])} NBFL log folders with different seeds")
             
-            if nbfl_config_key not in config_groups:
-                print(f"No NBFL logs found for config: {nbfl_config_key}")
-                continue
-            
-            nbfl_logs = config_groups[nbfl_config_key]
-            print(f"Found {len(nbfl_logs)} NBFL log folders with different seeds")
-            
-            # Determine which methods to plot
+            # Check for baseline methods
             if include_baselines:
-                # Always include NBFL
-                available_methods = ['NBFL']
                 baseline_logs = self.get_baseline_logs_for_config(config_groups, mal, attack_type, alpha, data_dist, rewind, ndevices, nsamples, rounds)
                 
                 if attack_type == 0:
@@ -344,18 +344,21 @@ class NBFLLogAnalyzer:
                 for method in methods_to_check:
                     if baseline_logs.get(method):
                         available_methods.append(method)
+                        all_method_logs[method] = baseline_logs[method]
                         if verbose:
                             print(f"  Found {len(baseline_logs[method])} {method} logs")
                     else:
                         if verbose:
                             print(f"  No {method} logs found for this config")
-                
-                methods = available_methods
-                colors = ['red', 'blue', 'green', 'purple', 'orange', 'brown'][:len(methods)]
-            else:
-                methods = ['NBFL']
-                colors = ['red']
-                baseline_logs = {}
+            
+            # Skip if no methods are available
+            if not available_methods:
+                if verbose:
+                    print(f"  No logs found for any method in this configuration, skipping")
+                continue
+            
+            methods = available_methods
+            colors = ['red', 'blue', 'green', 'purple', 'orange', 'brown'][:len(methods)]
             
             plt.figure(figsize=(10, 6))
             
@@ -372,10 +375,7 @@ class NBFLLogAnalyzer:
             # First pass: collect all mean lines to detect overlaps
             method_data = []
             for i, method in enumerate(methods):
-                if method == 'NBFL':
-                    logs_for_method = nbfl_logs
-                else:
-                    logs_for_method = baseline_logs.get(method, [])
+                logs_for_method = all_method_logs.get(method, [])
                 
                 if not logs_for_method:
                     if verbose:
@@ -493,6 +493,14 @@ class NBFLLogAnalyzer:
             
             # Create title and filename
             title = f'{" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}, rewind: {rewind}, n_samples: {nsamples}'
+            
+            # Check if we have any actual data to plot
+            if not method_data:
+                if verbose:
+                    print(f"  No valid method data found for this configuration, skipping plot generation")
+                plt.close()
+                continue
+            
             if include_baselines:
                 filename = f'{self.log_base_path}/NBFL/logs/comparison_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_nsamples_{nsamples}.png'
             else:
@@ -509,10 +517,7 @@ class NBFLLogAnalyzer:
                 plt.figure(figsize=(10, 6))
                 
                 for i, method in enumerate(methods):
-                    if method == 'NBFL':
-                        logs_for_method = nbfl_logs
-                    else:
-                        logs_for_method = baseline_logs.get(method, [])
+                    logs_for_method = all_method_logs.get(method, [])
                     
                     if not logs_for_method:
                         continue

@@ -149,6 +149,13 @@ class Device():
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
     def worker_prune(self, comm_round, logger):
+        
+        init_model_acc = self.eval_model_by_train(self.model)
+        accs = [init_model_acc]
+
+        if init_model_acc < self.args.prune_acc_trigger:
+            print(f"Worker {self.idx}'s model accuracy {init_model_acc} is below the pruning trigger {self.args.prune_acc_trigger}. Skip pruning.")
+            return
 
         # model prune percentage
         init_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
@@ -164,13 +171,8 @@ class Device():
         L_or_M = "M" if self._is_malicious else "L"
         print(f"\n---------- {L_or_M} Worker:{self.idx} starts pruning ---------------------")
 
-        init_model_acc = self.eval_model_by_train(self.model)
-        accs = [init_model_acc]
-
         to_prune_amount = init_pruned_ratio
         last_pruned_model = copy_model(self.model, self.args.dev_device)
-
-        adaptive_threshold = init_model_acc * self.args.acc_drop_frac
 
         while True:
             if self._is_malicious and self.attack_type == 1:
@@ -187,8 +189,7 @@ class Device():
             
             model_acc = self.eval_model_by_train(pruned_model)
             
-            # prune until the accuracy drop exceeds the adaptive threshold or below the target sparsity
-            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > adaptive_threshold: # self.args.acc_drop_frac: # or 1 - to_prune_amount <= self.args.target_sparsity:
+            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
@@ -432,7 +433,9 @@ class Device():
         self._final_global_model = weighted_fedavg(self.worker_to_model_weight, worker_to_model, device=self.args.dev_device)
 
     def validator_post_prune(self, comm_round, logger): # prune by the weighted average of the pruned amount of the selected models
-
+        # let's skip post-pruning and see how it goes
+        return 
+    
         init_pruned_ratio = get_pruned_ratio(self._final_global_model) # pruned_ratio = 0s/total_params = 1 - sparsity
         
         if 1 - init_pruned_ratio <= self.args.target_sparsity:
@@ -449,17 +452,17 @@ class Device():
         for worker_idx in self._device_to_ungranted_reward:
             if worker_idx == self.idx:
                 worker_to_pruned_ratio[self.idx] = self._worker_pruned_ratio
-                worker_to_power[self.idx] = self.pos_book[self.idx] + 0.001
+                worker_to_power[self.idx] = self.pos_book[self.idx] + 1
             else:
                 worker_model = self._verified_worker_txs[worker_idx]['model']
                 worker_to_pruned_ratio[worker_idx] = get_pruned_ratio(worker_model)
-                worker_to_power[worker_idx] = self.pos_book[worker_idx] + 0.001
+                worker_to_power[worker_idx] = self.pos_book[worker_idx] + 1
         
         worker_to_prune_weight = {worker_idx: power/sum(worker_to_power.values()) for worker_idx, power in worker_to_power.items()}
 
         need_pruned_ratio = sum([worker_to_pruned_ratio[worker_idx] * weight for worker_idx, weight in worker_to_prune_weight.items()])
-        # if self._is_malicious and self.attack_type == 1:
-        #     need_pruned_ratio *= 2 # need_pruned_ratio can be recalculated by devices examining worker transactions
+        if self._is_malicious and self.attack_type == 1:
+            need_pruned_ratio *= 2
 
         if need_pruned_ratio <= init_pruned_ratio:
             print(f"The need_pruned_ratio value ({need_pruned_ratio}) <= init_pruned_ratio ({init_pruned_ratio}). Validator {self.idx} skips post-pruning.")
@@ -479,7 +482,6 @@ class Device():
         logger["val_post_pruned_amount"][comm_round][self.idx] = need_pruned_ratio - init_pruned_ratio
 
         print(f"{L_or_M} Validator {self.idx} has pruned {need_pruned_ratio - init_pruned_ratio:.2f} of the model. Final sparsity: {1 - need_pruned_ratio:.2f}.\n")
-
 
     def produce_block(self):
         
