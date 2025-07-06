@@ -1,3 +1,4 @@
+
 """
 Updated plot_validator_selections.py using centralized utilities
 """
@@ -11,7 +12,7 @@ def plot_validator_selections():
     
     # Generate winning validator plots
     # Alpha values are auto-detected from available log folders
-    analyzer.generate_plot_validator_selections_plots()
+    analyzer.generate_winning_validator_plots()
     
     print("Winning validator plots generated successfully!")
 

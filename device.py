@@ -170,6 +170,8 @@ class Device():
         to_prune_amount = init_pruned_ratio
         last_pruned_model = copy_model(self.model, self.args.dev_device)
 
+        adaptive_threshold = init_model_acc * self.args.acc_drop_frac
+
         while True:
             if self._is_malicious and self.attack_type == 1:
                 to_prune_amount = 1 - self.args.target_sparsity # noise attacker tries to maximize the overlapping mask reward
@@ -185,8 +187,8 @@ class Device():
             
             model_acc = self.eval_model_by_train(pruned_model)
             
-            # prune until the accuracy drop exceeds the threshold or below the target sparsity
-            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
+            # prune until the accuracy drop exceeds the adaptive threshold or below the target sparsity
+            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > adaptive_threshold: # self.args.acc_drop_frac: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
@@ -387,7 +389,7 @@ class Device():
             worker_to_agg_acc_diff[vidx] = 0
             other_validators = [v for v in validator_transactions if v != vidx]
             for ov in other_validators:
-                validator_power = (self.pos_book[ov] + 1) / sum([self.pos_book[v] + 1 for v in other_validators])
+                validator_power = (self.pos_book[ov] + 0.001) / sum([self.pos_book[v] + 0.001 for v in other_validators])
                 worker_to_agg_acc_diff[vidx] += validator_transactions[ov]['worker_to_acc_diff'][vidx] * validator_power
 
         # assume euclidean distances form a normal distribution
@@ -447,17 +449,17 @@ class Device():
         for worker_idx in self._device_to_ungranted_reward:
             if worker_idx == self.idx:
                 worker_to_pruned_ratio[self.idx] = self._worker_pruned_ratio
-                worker_to_power[self.idx] = self.pos_book[self.idx] + 1
+                worker_to_power[self.idx] = self.pos_book[self.idx] + 0.001
             else:
                 worker_model = self._verified_worker_txs[worker_idx]['model']
                 worker_to_pruned_ratio[worker_idx] = get_pruned_ratio(worker_model)
-                worker_to_power[worker_idx] = self.pos_book[worker_idx] + 1
+                worker_to_power[worker_idx] = self.pos_book[worker_idx] + 0.001
         
         worker_to_prune_weight = {worker_idx: power/sum(worker_to_power.values()) for worker_idx, power in worker_to_power.items()}
 
         need_pruned_ratio = sum([worker_to_pruned_ratio[worker_idx] * weight for worker_idx, weight in worker_to_prune_weight.items()])
-        if self._is_malicious and self.attack_type == 1:
-            need_pruned_ratio *= 2
+        # if self._is_malicious and self.attack_type == 1:
+        #     need_pruned_ratio *= 2 # need_pruned_ratio can be recalculated by devices examining worker transactions
 
         if need_pruned_ratio <= init_pruned_ratio:
             print(f"The need_pruned_ratio value ({need_pruned_ratio}) <= init_pruned_ratio ({init_pruned_ratio}). Validator {self.idx} skips post-pruning.")

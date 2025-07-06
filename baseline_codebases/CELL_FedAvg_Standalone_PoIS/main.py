@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--n_malicious', type=int, default=0)
 
-    parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
+    parser.add_argument('--acc_drop_frac', type=float, default=0.05, help='fraction of current max local accuracy that defines maximum acceptable accuracy drop for pruning')
     parser.add_argument('--target_sparsity', type=float, default=0.1, help='target sparsity for pruning, stop pruning if below this threshold')
 
     # Run Type

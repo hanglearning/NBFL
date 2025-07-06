@@ -81,14 +81,11 @@ class NBFLLogAnalyzer:
             if os.path.isdir(folder_path):
                 parsed = self.parse_folder_name(folder)
                 if parsed:
-                    # Group by configuration, keeping method-specific keys
-                    if parsed['method'] == 'NBFL':
-                        config_key = f"NBFL_mnist_{parsed['data_dist']}_alpha_{parsed['alpha']}_ndevices_{parsed['ndevices']}_nsamples_{parsed['nsamples']}_rounds_{parsed['rounds']}_mal_{parsed['mal']}_attack_{parsed['attack']}_rewind_{parsed['rewind']}"
-                    else:
-                        # Use method-specific config key for baselines
-                        config_key = f"{parsed['method']}_mnist_{parsed['data_dist']}_alpha_{parsed['alpha']}_ndevices_{parsed['ndevices']}_nsamples_{parsed['nsamples']}_rounds_{parsed['rounds']}_mal_{parsed['mal']}_attack_{parsed['attack']}_rewind_{parsed['rewind']}"
+                    # Create a normalized config key that groups by all parameters except seed
+                    # This will allow proper grouping of NBFL, CELL, LotteryFL with same params
+                    normalized_config_key = f"{parsed['method']}_mnist_{parsed['data_dist']}_alpha_{parsed['alpha']}_ndevices_{parsed['ndevices']}_nsamples_{parsed['nsamples']}_rounds_{parsed['rounds']}_mal_{parsed['mal']}_attack_{parsed['attack']}_rewind_{parsed['rewind']}"
                     
-                    config_groups[config_key].append({
+                    config_groups[normalized_config_key].append({
                         'path': folder_path,
                         'seed': parsed['seed'],
                         'config': parsed,
@@ -101,12 +98,13 @@ class NBFLLogAnalyzer:
         """Extract unique configurations from grouped logs"""
         unique_configs = set()
         for config_key, logs in config_groups.items():
-            if logs and 'NBFL_' in config_key:  # Only consider NBFL configs for unique configs
+            if logs:
                 config = logs[0]['config']  # Get config from first log in group
-                unique_configs.add((config['mal'], config['attack'], config['alpha'], config['data_dist'], config['rewind']))
+                # Include all methods in unique configs, not just NBFL
+                unique_configs.add((config['mal'], config['attack'], config['alpha'], config['data_dist'], config['rewind'], config['ndevices'], config['nsamples'], config['rounds']))
         return unique_configs
 
-    def get_baseline_logs_for_config(self, config_groups, mal, attack_type, alpha, data_dist, rewind):
+    def get_baseline_logs_for_config(self, config_groups, mal, attack_type, alpha, data_dist, rewind, ndevices, nsamples, rounds):
         """Get baseline method logs for a specific configuration"""
         baseline_logs = {
             'STANDALONE': [],
@@ -118,7 +116,7 @@ class NBFLLogAnalyzer:
         
         # Look for each baseline method with its specific config key
         for method in baseline_logs.keys():
-            baseline_config_key = f"{method}_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
+            baseline_config_key = f"{method}_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
             
             if baseline_config_key in config_groups:
                 baseline_logs[method] = config_groups[baseline_config_key]
@@ -162,6 +160,9 @@ class NBFLLogAnalyzer:
         mal_values = sorted(set(config[0] for config in unique_configs))
         attack_values = sorted(set(config[1] for config in unique_configs))
         rewind_values = sorted(set(config[4] for config in unique_configs))
+        ndevices_values = sorted(set(config[5] for config in unique_configs))
+        nsamples_values = sorted(set(config[6] for config in unique_configs))
+        rounds_values = sorted(set(config[7] for config in unique_configs))
         
         return {
             'alpha_values': alpha_values,
@@ -169,6 +170,9 @@ class NBFLLogAnalyzer:
             'mal_values': mal_values,
             'attack_types': attack_values,
             'rewind_values': rewind_values,
+            'ndevices_values': ndevices_values,
+            'nsamples_values': nsamples_values,
+            'rounds_values': rounds_values,
             'total_configs': len(unique_configs),
             'total_log_groups': len(config_groups)
         }
@@ -206,16 +210,8 @@ class NBFLLogAnalyzer:
                 metric_values_over_devices.append(metric_values)
             
             if metric_values_over_devices:
-                # Debug: Check the structure
-                # print(f"    Debug: metric_values_over_devices length: {len(metric_values_over_devices)}")
-                # if metric_values_over_devices:
-                #     print(f"    Debug: first round values: {metric_values_over_devices[0]}")
-                
                 metric_values_over_devices = list(zip(*metric_values_over_devices))
-                # print(f"    Debug: after transpose, shape: {len(metric_values_over_devices)} devices")
-                
                 result = np.mean(metric_values_over_devices, axis=0)
-                # print(f"    Debug: result type: {type(result)}, value: {result}")
                 
                 # Ensure we always return an array, even if it's 1D
                 if np.isscalar(result) or result.ndim == 0:
@@ -309,7 +305,7 @@ class NBFLLogAnalyzer:
         
         unique_configs = self.get_unique_configs(config_groups)
         
-        for mal, attack_type, alpha, data_dist, rewind in unique_configs:
+        for mal, attack_type, alpha, data_dist, rewind, ndevices, nsamples, rounds in unique_configs:
             # Skip invalid combinations
             if self.should_skip_config(mal, attack_type):
                 continue
@@ -319,10 +315,10 @@ class NBFLLogAnalyzer:
                 continue
             
             if verbose:
-                print(f"Processing: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}, rewind={rewind}")
+                print(f"Processing: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}, rewind={rewind}, ndevices={ndevices}, nsamples={nsamples}, rounds={rounds}")
             
             # Find matching NBFL configuration key
-            nbfl_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
+            nbfl_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
             
             if nbfl_config_key not in config_groups:
                 print(f"No NBFL logs found for config: {nbfl_config_key}")
@@ -331,11 +327,11 @@ class NBFLLogAnalyzer:
             nbfl_logs = config_groups[nbfl_config_key]
             print(f"Found {len(nbfl_logs)} NBFL log folders with different seeds")
             
-            # Determine which methods to plot - MODIFIED SECTION
+            # Determine which methods to plot
             if include_baselines:
                 # Always include NBFL
                 available_methods = ['NBFL']
-                baseline_logs = self.get_baseline_logs_for_config(config_groups, mal, attack_type, alpha, data_dist, rewind)
+                baseline_logs = self.get_baseline_logs_for_config(config_groups, mal, attack_type, alpha, data_dist, rewind, ndevices, nsamples, rounds)
                 
                 if attack_type == 0:
                     # For no attack, include all available baselines
@@ -496,11 +492,11 @@ class NBFLLogAnalyzer:
                 plt.ylim(-0.05, 1.05)  # Add margin above 1.0 for sparsity plots
             
             # Create title and filename
-            title = f'{" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}, rewind: {rewind}'
+            title = f'{" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}, rewind: {rewind}, n_samples: {nsamples}'
             if include_baselines:
-                filename = f'{self.log_base_path}/NBFL/logs/comparison_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}.png'
+                filename = f'{self.log_base_path}/NBFL/logs/comparison_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_nsamples_{nsamples}.png'
             else:
-                filename = f'{self.log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}.png'
+                filename = f'{self.log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_nsamples_{nsamples}.png'
             
             plt.title(title)
             plt.savefig(filename, dpi=300, bbox_inches='tight')
@@ -548,11 +544,11 @@ class NBFLLogAnalyzer:
                 plt.xlabel('Communication Round')
                 plt.ylabel(y_axis_label)
                 
-                legit_title = f'LEGIT {" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}, rewind: {rewind}'
+                legit_title = f'LEGIT {" ".join(logger_concerning.split("_")).title()} - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}, rewind: {rewind}, n_samples: {nsamples}'
                 if include_baselines:
-                    legit_filename = f'{self.log_base_path}/NBFL/logs/comparison_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_legitimate.png'
+                    legit_filename = f'{self.log_base_path}/NBFL/logs/comparison_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_nsamples_{nsamples}_legitimate.png'
                 else:
-                    legit_filename = f'{self.log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_legitimate.png'
+                    legit_filename = f'{self.log_base_path}/NBFL/logs/avg_{logger_concerning}_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_nsamples_{nsamples}_legitimate.png'
                 
                 plt.title(legit_title)
                 plt.savefig(legit_filename, dpi=300, bbox_inches='tight')
@@ -589,7 +585,7 @@ class NBFLLogAnalyzer:
         
         unique_configs = self.get_unique_configs(config_groups)
         
-        for mal, attack_type, alpha, data_dist, rewind in unique_configs:
+        for mal, attack_type, alpha, data_dist, rewind, ndevices, nsamples, rounds in unique_configs:
             if self.should_skip_config(mal, attack_type):
                 continue
             
@@ -597,9 +593,9 @@ class NBFLLogAnalyzer:
                 continue
             
             if verbose:
-                print(f"Processing stake: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}, rewind={rewind}")
+                print(f"Processing stake: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}, rewind={rewind}, ndevices={ndevices}, nsamples={nsamples}, rounds={rounds}")
             
-            target_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
+            target_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
             
             if target_config_key not in config_groups:
                 continue
@@ -625,7 +621,7 @@ class NBFLLogAnalyzer:
             
             for i, ml in enumerate(mean_lines):
                 color = 'green'  # legitimate devices
-                if i + 1 + mal > 20:  # malicious devices
+                if i + 1 + mal > ndevices:  # malicious devices
                     color = 'red'
                     if attack_type == 3 or (attack_type == 4 and (i + 1) % 2 == 0):
                         color = 'magenta'
@@ -650,11 +646,11 @@ class NBFLLogAnalyzer:
             
             plt.xlabel('Communication Round', fontsize=10)
             plt.ylabel('Stake', fontsize=10)
-            plt.title(f'Stake Curves - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}, rewind: {rewind}', fontsize=12)
+            plt.title(f'Stake Curves - {mal} Atkers - {self.attack_type_map[attack_type]}, α: {alpha}, {data_dist.upper()}, rewind: {rewind}, n_samples: {nsamples}', fontsize=12)
             plt.grid(axis='x')
             plt.xticks(range(1, len(mean_lines[0]) + 1))
             
-            filename = f'{self.log_base_path}/NBFL/logs/avg_stake_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}.png'
+            filename = f'{self.log_base_path}/NBFL/logs/avg_stake_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_nsamples_{nsamples}.png'
             plt.savefig(filename, dpi=300, bbox_inches='tight')
             print(f"Saved stake plot: {filename}")
             plt.clf()
@@ -687,14 +683,14 @@ class NBFLLogAnalyzer:
         # Build data in the same order as the plot will display
         plot_data = []  # Store all data to ensure consistent ordering
         
-        for mal, attack_type, alpha, data_dist, rewind in sorted(unique_configs):
+        for mal, attack_type, alpha, data_dist, rewind, ndevices, nsamples, rounds in sorted(unique_configs):
             if self.should_skip_config(mal, attack_type):
                 continue
             
             if alpha not in alpha_filter:
                 continue
             
-            target_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
+            target_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
             
             if target_config_key not in config_groups:
                 continue
@@ -718,7 +714,7 @@ class NBFLLogAnalyzer:
                             malicious_rounds += 1
                 
                 # Store data for this row
-                label = f'M{mal} - {self.attack_type_map[attack_type]}, sd: {log_info["seed"]}, α: {alpha}, {data_dist}, rewind: {rewind}'
+                label = f'M{mal} - {self.attack_type_map[attack_type]}, sd: {log_info["seed"]}, α: {alpha}, {data_dist}, rewind: {rewind}, n_samples: {nsamples}'
                 percentage = (malicious_rounds / total_rounds * 100) if total_rounds > 0 else 0
                 
                 plot_data.append({
@@ -870,7 +866,7 @@ class NBFLLogAnalyzer:
         import matplotlib.pyplot as plt
         import numpy as np
         
-        for mal, attack_type, alpha, data_dist, rewind in unique_configs:
+        for mal, attack_type, alpha, data_dist, rewind, ndevices, nsamples, rounds in unique_configs:
             if self.should_skip_config(mal, attack_type):
                 continue
             
@@ -878,9 +874,9 @@ class NBFLLogAnalyzer:
                 continue
             
             if verbose:
-                print(f"Processing winning validators: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}, rewind={rewind}")
+                print(f"Processing winning validators: mal={mal}, attack={attack_type}, alpha={alpha}, data_dist={data_dist}, rewind={rewind}, ndevices={ndevices}, nsamples={nsamples}, rounds={rounds}")
             
-            target_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_20_nsamples_200_rounds_25_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
+            target_config_key = f"NBFL_mnist_{data_dist}_alpha_{alpha}_ndevices_{ndevices}_nsamples_{nsamples}_rounds_{rounds}_mal_{mal}_attack_{attack_type}_rewind_{rewind}"
             
             if target_config_key not in config_groups:
                 continue
@@ -939,7 +935,7 @@ class NBFLLogAnalyzer:
                 # Customize the plot
                 ax.set_xlabel('Communication Round', fontsize=10)
                 ax.set_ylabel('Winning Validator ID', fontsize=10)
-                ax.set_title(f'Winning Validator Selection - M{mal} - {self.attack_type_map[attack_type]}, seed: {seed}, α: {alpha}, {data_dist.upper()}', fontsize=12)
+                ax.set_title(f'Winning Validator Selection - M{mal} - {self.attack_type_map[attack_type]}, seed: {seed}, α: {alpha}, {data_dist.upper()}, n_samples: {nsamples}', fontsize=12)
                 
                 # Set integer ticks for both axes
                 if comm_rounds:
@@ -965,7 +961,7 @@ class NBFLLogAnalyzer:
                     ax.axhline(y=validator_id, color='lightgray', linestyle='-', linewidth=0.5, alpha=0.7)
                 
                 # Save the plot
-                filename = f'{self.log_base_path}/NBFL/logs/winning_validator_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_seed_{seed}.png'
+                filename = f'{self.log_base_path}/NBFL/logs/winning_validator_mal_{mal}_attack_{attack_type}_alpha_{alpha}_{data_dist}_rewind_{rewind}_nsamples_{nsamples}_seed_{seed}.png'
                 plt.savefig(filename, dpi=300, bbox_inches='tight')
                 if verbose:
                     print(f"  Saved: {filename}")
@@ -992,6 +988,9 @@ def generate_all_plots(log_base_path='/Users/chenhang/Documents/Working', alpha_
         print(f"  Data distributions: {summary['data_distributions']}")
         print(f"  Malicious counts: {summary['mal_values']}")
         print(f"  Attack types: {summary['attack_types']}")
+        print(f"  ndevices values: {summary['ndevices_values']}")
+        print(f"  nsamples values: {summary['nsamples_values']}")
+        print(f"  rounds values: {summary['rounds_values']}")
         print(f"  Total unique configs: {summary['total_configs']}")
         print(f"  Total log groups: {summary['total_log_groups']}")
         print()
