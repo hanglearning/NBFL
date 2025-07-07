@@ -55,6 +55,8 @@ class Device():
         self.max_model_acc = 0
         self._worker_pruned_ratio = 0
         self.noise_variance = noise_variance
+        self.has_pruned = False
+        self.prune_factor = 1
         # for validators
         self._validator_tx = None
         self._verified_worker_txs = {} # signature verified
@@ -93,8 +95,8 @@ class Device():
             if self.attack_type == 3:
                 attack_type = 'Lazy'
         
-        print(f"\n---------- {L_or_M} {attack_type} Worker:{self.idx} Train to Max Acc Update ---------------------")
-        if comm_round > 1 and self.args.rewind:
+        print(f"---------- {L_or_M} {attack_type} Worker:{self.idx} Train to Max Acc Update ---------------------")
+        if comm_round > 1 and self.args.rewind and self.has_pruned:
         # reinitialize model with initial params
             source_params = dict(self.init_global_model.named_parameters())
             for name, param in self.model.named_parameters():
@@ -139,7 +141,7 @@ class Device():
                 epoch += 1
 
 
-            print(f"Worker {self.idx} with max training acc {max_acc} arrived at epoch {max_model_epoch}.")
+            print(f"Worker {self.idx} with max training acc {max_acc} arrived at epoch {max_model_epoch}.\n")
             logger['local_max_epoch'][comm_round][self.idx] = max_model_epoch
 
             self.model = max_model
@@ -149,12 +151,16 @@ class Device():
         logger['local_test_acc'][comm_round][self.idx] = self.eval_model_by_local_test(self.model)
 
     def worker_prune(self, comm_round, logger):
+
+        if comm_round == 1:
+            return
         
         init_model_acc = self.eval_model_by_train(self.model)
         accs = [init_model_acc]
 
-        if init_model_acc < self.args.prune_acc_trigger:
-            print(f"Worker {self.idx}'s model accuracy {init_model_acc} is below the pruning trigger {self.args.prune_acc_trigger}. Skip pruning.")
+        self.prune_factor *= self.args.prune_acc_trigger
+        if init_model_acc < self.prune_factor:
+            print(f"Worker {self.idx}'s model accuracy {init_model_acc} is below the pruning trigger {self.prune_factor}. Skip pruning.")
             return
 
         # model prune percentage
@@ -163,7 +169,7 @@ class Device():
             print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
             return
         
-        max_intended_prune_amount = self.max_model_acc
+        max_intended_prune_amount = init_model_acc
         if max_intended_prune_amount < get_pruned_ratio(self.model):
             max_intended_prune_amount = get_pruned_ratio(self.model)
         
@@ -186,19 +192,22 @@ class Device():
                         amount=to_prune_amount,
                         name='weight',
                         verbose=self.args.prune_verbose)
-            
             model_acc = self.eval_model_by_train(pruned_model)
             
             if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
+                self.has_pruned = True
+                self.prune_factor = 1
                 break
 
             if to_prune_amount == max_intended_prune_amount or 1 - to_prune_amount <= self.args.target_sparsity:
                 # reached intended prune amount, stop
                 self.model = copy_model(pruned_model, self.args.dev_device)
                 self.max_model_acc = model_acc
+                self.has_pruned = True
+                self.prune_factor = 1
                 break
 
             accs.append(model_acc)

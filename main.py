@@ -81,7 +81,6 @@ parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='if t
 parser.add_argument('--prune_acc_trigger', type=float, default=0.8, help='must achieve this accuracy to trigger worker to prune its local model')
 parser.add_argument('--acc_stable_prune_rounds', type=int, default=3, help='number of max_accuracy-stable rounds to trigger pruning')
 
-
 ####################### blockchain setting #######################
 parser.add_argument('--n_devices', type=int, default=10)
 parser.add_argument('--check_signature', type=int, default=0, 
@@ -264,6 +263,7 @@ def main():
             device.layer_to_model_sig_col = {}
             device.max_model_acc = 0
             device._worker_pruned_ratio = 0
+            device.has_pruned = False
             # validators
             device._validator_tx = None
             device._verified_worker_txs = {}
@@ -294,10 +294,10 @@ def main():
             # resync chain - especially offline devices from last round
             if worker.resync_chain(comm_round, idx_to_device):
                 worker.post_resync(idx_to_device)
-            # perform training
-            worker.model_learning_max(comm_round, logger)
             # perform pruning
             worker.worker_prune(comm_round, logger)
+            # perform training
+            worker.model_learning_max(comm_round, logger)
             # generate model signature
             worker.generate_model_sig()
             # make tx
@@ -320,7 +320,7 @@ def main():
                     worker.role = 'validator'
                     online_validators.append(worker)
         
-        print(f"\nRound {comm_round}, {len(online_validators)} validators selected.")
+        print(f"\nRound {comm_round}, {len(online_validators)} validators volunteered.")
             
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]
