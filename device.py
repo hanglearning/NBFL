@@ -152,9 +152,9 @@ class Device():
 
         # model prune percentage
         init_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
-        if self.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
-            print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
-            return
+        # if self.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
+        #     print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
+        #     return
         
         max_intended_prune_amount = self.max_model_acc
         if max_intended_prune_amount < get_pruned_ratio(self.model):
@@ -172,10 +172,11 @@ class Device():
 
         while True:
             if self._is_malicious and self.attack_type == 1:
-                to_prune_amount = 1 - self.args.target_sparsity # noise attacker tries to maximize the overlapping mask reward
+                # to_prune_amount = 1 - self.args.target_sparsity # noise attacker tries to maximize the overlapping mask reward
+                to_prune_amount = 0.99
             else:
                 to_prune_amount += random.uniform(0, self.args.max_prune_step)
-                to_prune_amount = min(to_prune_amount, max_intended_prune_amount, 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
+                to_prune_amount = min(to_prune_amount, max_intended_prune_amount) # , 1 - self.args.target_sparsity) # ensure the pruned amount is not larger than the target sparsity
             pruned_model = copy_model(self.model, self.args.dev_device)
             make_prune_permanent(pruned_model)
             l1_prune(model=pruned_model,
@@ -192,7 +193,7 @@ class Device():
                 self.max_model_acc = accs[-1]
                 break
 
-            if to_prune_amount == max_intended_prune_amount or 1 - to_prune_amount <= self.args.target_sparsity:
+            if to_prune_amount == max_intended_prune_amount: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # reached intended prune amount, stop
                 self.model = copy_model(pruned_model, self.args.dev_device)
                 self.max_model_acc = model_acc
@@ -387,7 +388,7 @@ class Device():
             worker_to_agg_acc_diff[vidx] = 0
             other_validators = [v for v in validator_transactions if v != vidx]
             for ov in other_validators:
-                validator_power = (self.pos_book[ov] + 1) / sum([self.pos_book[v] + 1 for v in other_validators])
+                validator_power = (self.pos_book[ov] + 0.001) / sum([self.pos_book[v] + 0.001 for v in other_validators])
                 worker_to_agg_acc_diff[vidx] += validator_transactions[ov]['worker_to_acc_diff'][vidx] * validator_power
 
         # assume euclidean distances form a normal distribution
@@ -433,9 +434,9 @@ class Device():
 
         init_pruned_ratio = get_pruned_ratio(self._final_global_model) # pruned_ratio = 0s/total_params = 1 - sparsity
         
-        if 1 - init_pruned_ratio <= self.args.target_sparsity:
-            print(f"\nValidator {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity. Skip post-pruning.")
-            return
+        # if 1 - init_pruned_ratio <= self.args.target_sparsity:
+        #     print(f"\nValidator {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity. Skip post-pruning.")
+        #     return
         
         print()
         L_or_M = "M" if self._is_malicious else "L"
@@ -447,23 +448,23 @@ class Device():
         for worker_idx in self._device_to_ungranted_reward:
             if worker_idx == self.idx:
                 worker_to_pruned_ratio[self.idx] = self._worker_pruned_ratio
-                worker_to_power[self.idx] = self.pos_book[self.idx] + 1
+                worker_to_power[self.idx] = self.pos_book[self.idx] + 0.001
             else:
                 worker_model = self._verified_worker_txs[worker_idx]['model']
                 worker_to_pruned_ratio[worker_idx] = get_pruned_ratio(worker_model)
-                worker_to_power[worker_idx] = self.pos_book[worker_idx] + 1
+                worker_to_power[worker_idx] = self.pos_book[worker_idx] + 0.001
         
         worker_to_prune_weight = {worker_idx: power/sum(worker_to_power.values()) for worker_idx, power in worker_to_power.items()}
 
         need_pruned_ratio = sum([worker_to_pruned_ratio[worker_idx] * weight for worker_idx, weight in worker_to_prune_weight.items()])
-        if self._is_malicious and self.attack_type == 1:
-            need_pruned_ratio *= 2
+        # if self._is_malicious and self.attack_type == 1: # need_pruned_ratio verifiable by other validators, cannot cheat
+        #     need_pruned_ratio *= 2
 
         if need_pruned_ratio <= init_pruned_ratio:
             print(f"The need_pruned_ratio value ({need_pruned_ratio}) <= init_pruned_ratio ({init_pruned_ratio}). Validator {self.idx} skips post-pruning.")
             return
 
-        need_pruned_ratio = min(need_pruned_ratio, 1 - self.args.target_sparsity)
+        need_pruned_ratio = min(need_pruned_ratio, 0.99) # 1 - self.args.target_sparsity)
         to_prune_amount = need_pruned_ratio
         if check_mask_object_from_model(self._final_global_model):
             to_prune_amount = (need_pruned_ratio - init_pruned_ratio) / (1 - init_pruned_ratio)
@@ -828,7 +829,7 @@ class Device():
 
 
         ''' validate model signature to make sure the validator is performing model aggregation honestly '''
-        layer_to_model_sig_row, layer_to_model_sig_col = sum_over_model_params(winning_block.global_model)
+        layer_to_model_sig_row, layer_to_model_sig_col = sum_over_model_params(winning_block.global_model) # sum over model parameters prior to post-pruning
         
         # get aggregated validation values by the same rule in produce_global_model_and_reward() - in practice this should be a smart contract get_validation_values() shared by these two functions
         worker_to_agg_acc_diff, worker_to_agg_euc_dist, worker_to_agg_mask_overlap_percent, worker_to_agg_top_mag_overlap_percent = self.get_validation_values(winning_block.validator_txs, winning_validator = winning_block.produced_by)
