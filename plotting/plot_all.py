@@ -1,15 +1,14 @@
 """
 Master script to generate all plots using centralized utilities
-Updated to work with any available method logs (not just NBFL)
 """
 
 from plotting_utils import NBFLLogAnalyzer
 
 def main():
-    """Generate all plots with consistent logic for any available methods"""
+    """Generate all plots with consistent logic"""
     
     # Configuration
-    log_base_path = '/Users/chenhang/Documents/Working'
+    log_base_path = '/Users/chenhang/Documents/Working/NBFL/logs'
     
     print("Starting comprehensive plot generation...")
     print(f"Base path: {log_base_path}")
@@ -25,23 +24,12 @@ def main():
     print(f"  Data distributions: {summary['data_distributions']}")
     print(f"  Malicious counts: {summary['mal_values']}")
     print(f"  Attack types: {summary['attack_types']}")
-    print(f"  ndevices values: {summary['ndevices_values']}")
-    print(f"  nsamples values: {summary['nsamples_values']}")
-    print(f"  rounds values: {summary['rounds_values']}")
     print(f"  Total unique configs: {summary['total_configs']}")
     print(f"  Total log groups: {summary['total_log_groups']}")
-    
-    # Show what methods are available
-    config_groups = analyzer.group_logs_by_config()
-    available_methods = set()
-    for config_key in config_groups.keys():
-        method = config_key.split('_')[0]
-        available_methods.add(method)
-    print(f"  Available methods: {sorted(available_methods)}")
     print("=" * 60)
     
-    # 1. Generate accuracy plots with all available methods
-    print("\n1. Generating accuracy plots with all available methods...")
+    # 1. Generate accuracy plots with baseline comparisons
+    print("\n1. Generating accuracy plots with baseline comparisons...")
     analyzer.generate_metric_plots(
         logger_concerning='global_test_acc',
         y_axis_label='Accuracy',
@@ -56,8 +44,8 @@ def main():
         include_baselines=True
     )
     
-    # 2. Generate sparsity plots with all available methods
-    print("\n2. Generating sparsity plots with all available methods...")
+    # 2. Generate sparsity plots with baseline comparisons
+    print("\n2. Generating sparsity plots with baseline comparisons...")
     analyzer.generate_metric_plots(
         logger_concerning='global_model_sparsity',
         y_axis_label='Sparsity',
@@ -65,30 +53,21 @@ def main():
         include_baselines=True
     )
     
-    # 3. Generate stake plots (only for NBFL method)
+    # 3. Generate stake plots
     print("\n3. Generating stake plots...")
-    if 'NBFL' in available_methods:
-        analyzer.generate_stake_plots()
-    else:
-        print("   Skipping stake plots (requires NBFL logs)")
+    analyzer.generate_stake_plots()
     
-    # 4. Generate event plots (only for NBFL method)
+    # 4. Generate event plots
     print("\n4. Generating event plots...")
-    if 'NBFL' in available_methods:
-        analyzer.generate_event_plots(event_type='forking_event')
-        analyzer.generate_event_plots(event_type='malicious_winning_count')
-    else:
-        print("   Skipping event plots (requires NBFL logs)")
+    analyzer.generate_event_plots(event_type='forking_event')
+    analyzer.generate_event_plots(event_type='malicious_winning_count')
     
-    # 5. Generate winning validator plots (only for NBFL method)
+    # 5. Generate winning validator plots
     print("\n5. Generating winning validator plots...")
-    if 'NBFL' in available_methods:
-        analyzer.generate_winning_validator_plots()
-    else:
-        print("   Skipping winning validator plots (requires NBFL logs)")
+    analyzer.generate_winning_validator_plots()
     
     print("\n" + "=" * 60)
-    print("All available plots generated successfully!")
+    print("All plots generated successfully!")
     print("Check the logs directory for output files.")
 
 if __name__ == "__main__":

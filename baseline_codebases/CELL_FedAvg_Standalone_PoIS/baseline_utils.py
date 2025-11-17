@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from typing import List, Tuple, Dict, Union
 from torch.nn import functional as F
 import gzip
+from typing import Any, Dict, Optional
 
 
 @torch.no_grad()
@@ -74,59 +75,113 @@ metrics = MetricCollection([
     Recall('MULTICLASS', num_classes = 10),
 ])
 
+def build_optimizer(params, optimizer_type: str, lr: float, weight_decay: float = 0.0):
+	optimizer_type = optimizer_type.lower()
+	if optimizer_type == "adam":
+		return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
+	if optimizer_type == "adamw":
+		return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
+	if optimizer_type == "sgd":
+		return torch.optim.SGD(params, lr=lr, momentum=0.9, nesterov=True, weight_decay=weight_decay)
+	raise ValueError(f"Unknown optimizer_type: {optimizer_type}")
 
 def train(
     model: nn.Module,
     train_dataloader: DataLoader,
+    optimizer_type: str = "adamw",
     lr: float = 1e-3,
-    device: str = 'cuda:0',
-    fast_dev_run=False,
-    verbose=True
-) -> Dict[str, torch.Tensor]:
+    weight_decay: float = 1e-4,
+    device: str = "cuda:0",
+    fast_dev_run: bool = False,
+    verbose: bool = True,
+    metrics: Optional[nn.Module] = None,   # e.g., torchmetrics.MetricCollection
+    amp: bool = True,
+    grad_clip: Optional[float] = 1.0,
+    return_gradients: bool = False,
+) -> Dict[str, Any]:
 
-    optimizer = torch.optim.Adam(lr=lr, params=model.parameters())
+    # Move model to device
+    model.to(device)
+    
+    # Prepare metrics
+    if metrics is not None:
+        metrics.to(device)
+        metrics.reset()
+
+    # Optimizer and loss
+    optimizer = build_optimizer(model.parameters(), optimizer_type, lr, weight_decay)
     loss_fn = nn.CrossEntropyLoss()
-    num_batch = len(train_dataloader)
-    global metrics
 
-    metrics = metrics.to(device)
-    model.train(True)
+    model.train()
     torch.set_grad_enabled(True)
 
+    # AMP support
+    scaler = torch.cuda.amp.GradScaler(enabled=amp and torch.cuda.is_available())
+    autocast_ctx = torch.cuda.amp.autocast(
+        dtype=torch.float16,
+        enabled=amp and torch.cuda.is_available()
+    )
+
     losses = []
-    progress_bar = tqdm(enumerate(train_dataloader),
-                        total=num_batch,
-                        disable=not verbose,
-                        )
 
-    for batch_idx, batch in progress_bar:
-        x, y = batch
-        # print(y)
-        x = x.to(device)
-        y = y.to(device)
-        y_hat = model(x)
-        loss = F.cross_entropy(y_hat, y)
-        model.zero_grad()
+    # Training loop (no progress bar)
+    for x, y in train_dataloader:
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True).long()
 
-        loss.backward()
-        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
 
-        losses.append(loss.item())
-        output = metrics(y_hat, y)
+        with autocast_ctx:
+            logits = model(x)
+            loss = loss_fn(logits, y)
 
-        progress_bar.set_postfix({'loss': loss.item(),
-                                  'acc': output['MulticlassAccuracy'].item()})
+        # backward
+        scaler.scale(loss).backward()
+
+        if grad_clip is not None:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
+        scaler.step(optimizer)
+        scaler.update()
+
+        losses.append(loss.detach().item())
+
+        if metrics is not None:
+            metrics.update(logits, y)
+
         if fast_dev_run:
             break
 
-    outputs = metrics.compute()
-    metrics.reset()
-    outputs = {k: [v.item()] for k, v in outputs.items()}
+    # After training loop
+    results: Dict[str, Any] = {}
+
+    # metrics
+    if metrics is not None:
+        computed = metrics.compute()
+        metrics.reset()
+        results.update({k: [v.item()] for k, v in computed.items()})
+
+    # Loss
+    avg_loss = sum(losses) / max(1, len(losses))
+    results["Loss"] = [avg_loss]
+
     torch.set_grad_enabled(False)
-    outputs['Loss'] = [sum(losses) / len(losses)]
+
     if verbose:
-        print(tabulate(outputs, headers='keys', tablefmt='github'))
-    return outputs
+        from tabulate import tabulate
+        print(tabulate(results, headers="keys", tablefmt="github"))
+
+    # Optional gradient return
+    if return_gradients:
+        grads = {
+            name: p.grad.detach().clone()
+            for name, p in model.named_parameters()
+            if p.grad is not None
+        }
+        results["gradients"] = grads
+
+    return results
 
 
 # def evaluate(model, data_loader, verbose=True):

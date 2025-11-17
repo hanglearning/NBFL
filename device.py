@@ -55,8 +55,6 @@ class Device():
         self.max_model_acc = 0
         self._worker_pruned_ratio = 0
         self.noise_variance = noise_variance
-        self.has_pruned = False
-        self.prune_factor = 1
         # for validators
         self._validator_tx = None
         self._verified_worker_txs = {} # signature verified
@@ -95,8 +93,8 @@ class Device():
             if self.attack_type == 3:
                 attack_type = 'Lazy'
         
-        print(f"---------- {L_or_M} {attack_type} Worker:{self.idx} Train to Max Acc Update ---------------------")
-        if comm_round > 1 and self.args.rewind and self.has_pruned:
+        print(f"\n---------- {L_or_M} {attack_type} Worker:{self.idx} Train to Max Acc Update ---------------------")
+        if comm_round > 1 and self.args.reset:
         # reinitialize model with initial params
             source_params = dict(self.init_global_model.named_parameters())
             for name, param in self.model.named_parameters():
@@ -126,12 +124,11 @@ class Device():
                 if self.args.train_verbose:
                     print(f"Worker={self.idx}, epoch={epoch + 1}")
 
-                util_train(self.model,
-                            self._train_loader,
-                            self.args.optimizer,
-                            self.args.lr,
-                            self.args.dev_device,
-                            self.args.train_verbose)
+                util_train(model = self.model,
+                            train_dataloader = self._train_loader,
+                            optimizer_type = self.args.optimizer,
+                            lr = self.args.lr,
+                            device = self.args.dev_device)
                 acc = self.eval_model_by_train(self.model)
                 if acc > max_acc:
                     max_model = copy_model(self.model, self.args.dev_device)
@@ -141,7 +138,7 @@ class Device():
                 epoch += 1
 
 
-            print(f"Worker {self.idx} with max training acc {max_acc} arrived at epoch {max_model_epoch}.\n")
+            print(f"Worker {self.idx} with max training acc {max_acc} arrived at epoch {max_model_epoch}.")
             logger['local_max_epoch'][comm_round][self.idx] = max_model_epoch
 
             self.model = max_model
@@ -152,30 +149,22 @@ class Device():
 
     def worker_prune(self, comm_round, logger):
 
-        if comm_round == 1:
-            return
-        
-        init_model_acc = self.eval_model_by_train(self.model)
-        accs = [init_model_acc]
-
-        self.prune_factor *= self.args.prune_acc_trigger
-        if init_model_acc < self.prune_factor:
-            print(f"Worker {self.idx}'s model accuracy {init_model_acc} is below the pruning trigger {self.prune_factor}. Skip pruning.")
-            return
-
         # model prune percentage
         init_pruned_ratio = get_pruned_ratio(self.model) # pruned_ratio = 0s/total_params = 1 - sparsity
         if self.attack_type != 1 and 1 - init_pruned_ratio <= self.args.target_sparsity:
             print(f"Worker {self.idx}'s model at sparsity {1 - init_pruned_ratio}, which is already <= the target sparsity {self.args.target_sparsity}. Skip pruning.")
             return
         
-        max_intended_prune_amount = init_model_acc
+        max_intended_prune_amount = self.max_model_acc
         if max_intended_prune_amount < get_pruned_ratio(self.model):
             max_intended_prune_amount = get_pruned_ratio(self.model)
         
         print()
         L_or_M = "M" if self._is_malicious else "L"
         print(f"\n---------- {L_or_M} Worker:{self.idx} starts pruning ---------------------")
+
+        init_model_acc = self.eval_model_by_train(self.model)
+        accs = [init_model_acc]
 
         to_prune_amount = init_pruned_ratio
         last_pruned_model = copy_model(self.model, self.args.dev_device)
@@ -192,22 +181,20 @@ class Device():
                         amount=to_prune_amount,
                         name='weight',
                         verbose=self.args.prune_verbose)
+            
             model_acc = self.eval_model_by_train(pruned_model)
             
+            # prune until the accuracy drop exceeds the threshold or below the target sparsity
             if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
-                self.has_pruned = True
-                self.prune_factor = 1
                 break
 
             if to_prune_amount == max_intended_prune_amount or 1 - to_prune_amount <= self.args.target_sparsity:
                 # reached intended prune amount, stop
                 self.model = copy_model(pruned_model, self.args.dev_device)
                 self.max_model_acc = model_acc
-                self.has_pruned = True
-                self.prune_factor = 1
                 break
 
             accs.append(model_acc)
@@ -399,7 +386,7 @@ class Device():
             worker_to_agg_acc_diff[vidx] = 0
             other_validators = [v for v in validator_transactions if v != vidx]
             for ov in other_validators:
-                validator_power = (self.pos_book[ov] + 0.001) / sum([self.pos_book[v] + 0.001 for v in other_validators])
+                validator_power = (self.pos_book[ov] + 1) / sum([self.pos_book[v] + 1 for v in other_validators])
                 worker_to_agg_acc_diff[vidx] += validator_transactions[ov]['worker_to_acc_diff'][vidx] * validator_power
 
         # assume euclidean distances form a normal distribution
@@ -442,9 +429,7 @@ class Device():
         self._final_global_model = weighted_fedavg(self.worker_to_model_weight, worker_to_model, device=self.args.dev_device)
 
     def validator_post_prune(self, comm_round, logger): # prune by the weighted average of the pruned amount of the selected models
-        # let's skip post-pruning and see how it goes
-        return 
-    
+
         init_pruned_ratio = get_pruned_ratio(self._final_global_model) # pruned_ratio = 0s/total_params = 1 - sparsity
         
         if 1 - init_pruned_ratio <= self.args.target_sparsity:
@@ -491,6 +476,7 @@ class Device():
         logger["val_post_pruned_amount"][comm_round][self.idx] = need_pruned_ratio - init_pruned_ratio
 
         print(f"{L_or_M} Validator {self.idx} has pruned {need_pruned_ratio - init_pruned_ratio:.2f} of the model. Final sparsity: {1 - need_pruned_ratio:.2f}.\n")
+
 
     def produce_block(self):
         
@@ -918,7 +904,9 @@ class Device():
 
         # used to record if a block is produced by a malicious device
         self.has_appended_block = True
+        
         # update global model
+        make_prune_permanent(self.verified_winning_block.global_model)
         self.model = deepcopy(self.verified_winning_block.global_model)
 
         self.blockchain.chain.append(deepcopy(self.verified_winning_block))

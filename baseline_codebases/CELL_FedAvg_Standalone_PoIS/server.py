@@ -121,8 +121,10 @@ class Server():
             if self.args.standalone_LTH:
                 client.update_standalone_LTH(logger)
             if self.args.fedavg_no_prune_max_acc:
+                client.model = copy_model(client.global_model, client.args.dev_device)
                 client.update_fedavg_no_prune_max_acc(comm_round, logger)
             if self.args.PoIS:
+                client.model = copy_model(client.global_model, client.args.dev_device)
                 client.update_PoIS(comm_round, logger)
             if self.args.CELL:
                 client.update_CELL(comm_round, logger)

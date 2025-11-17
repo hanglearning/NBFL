@@ -75,7 +75,7 @@ class Client():
         
         print(f"\n---------- {L_or_M} {attack_type} Worker:{self.idx} Train to Max Acc Update ---------------------")
 
-        if comm_round > 1 and self.args.rewind:
+        if comm_round > 1 and self.args.reset:
         # reinitialize model with init_params
             source_params = dict(self.init_global_model.named_parameters())
             for name, param in self.model.named_parameters():
@@ -104,12 +104,13 @@ class Client():
                 if self.args.train_verbose:
                     print(f"Worker={self.idx}, epoch={epoch + 1}")
 
-                util_train(self.model,
-                            self._train_loader,
-                            # self.args.optimizer,
-                            self.args.lr,
-                            self.args.dev_device,
-                            self.args.train_verbose)
+                util_train(model = self.model,
+                            train_dataloader = self._train_loader,
+                            optimizer_type = self.args.optimizer,
+                            lr = self.args.lr,
+                            device = self.args.dev_device,
+                            verbose = self.args.train_verbose)
+                
                 acc = self.eval_model_by_train(self.model)
                 if acc > max_acc:
                     max_model = copy_model(self.model, self.args.dev_device)
@@ -149,8 +150,6 @@ class Client():
 
         to_prune_amount = init_pruned_ratio
         last_pruned_model = copy_model(self.model, self.args.dev_device)
-        
-        adaptive_threshold = init_model_acc * self.args.acc_drop_frac
 
         while True:
             if self._is_malicious and self.attack_type == 1:
@@ -168,7 +167,7 @@ class Client():
             model_acc = self.eval_model_by_train(pruned_model)
             
             # prune until the accuracy drop exceeds the threshold or below the target sparsity
-            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > adaptive_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
+            if not (self._is_malicious and self.attack_type == 1) and init_model_acc - model_acc > self.args.acc_drop_threshold: # or 1 - to_prune_amount <= self.args.target_sparsity:
                 # revert to the last pruned model
                 self.model = copy_model(last_pruned_model, self.args.dev_device) # copy mask as well
                 self.max_model_acc = accs[-1]
@@ -222,8 +221,6 @@ class Client():
             Interface to Server
         """
         print(f"\n----------Client:{self.idx} Update---------------------")
-
-        logger['global_test_acc'][comm_round][self.idx] = self.eval_model_by_global_test(self.model)
 
         print(f"Evaluating Global model ")
         metrics = self.eval(self.global_model)
@@ -301,12 +298,12 @@ class Client():
                 print(
                     f"Client={self.idx}, epoch={epoch}, round:{round_index}")
 
-            metrics = util_train(self.model,
-                                 self._train_loader,
-                                 self.args.lr,
-                                 self.args.dev_device,
-                                 self.args.fast_dev_run,
-                                 self.args.train_verbose)
+            util_train(model = self.model,
+                            train_dataloader = self._train_loader,
+                            optimizer_type = self.args.optimizer,
+                            lr = self.args.lr,
+                            device = self.args.dev_device,
+                            verbose = self.args.train_verbose)
             losses.append(metrics['Loss'][0])
 
             if self.args.fast_dev_run:

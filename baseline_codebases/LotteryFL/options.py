@@ -56,7 +56,7 @@ def args_parser():
                         help='pruning end rate')
     parser.add_argument('--mask_ratio', type=float, default=0.5,
                         help='mask ratio')
-    parser.add_argument('--rewind', type=float, default=1,
+    parser.add_argument('--reset', type=float, default=1,
                         help='reset model to initial weights')
     # other arguments
     # parser.add_argument('--dataset', type=str, default='mnist_extr_noniid', help="name \
@@ -67,7 +67,8 @@ def args_parser():
                         default='non-iid', help='non-iid|iid')
     parser.add_argument('--gpu', default=None, help="To use cuda, set \
                         to a specific GPU ID. Default set to use CPU.")
-    parser.add_argument('--optimizer', type=str, default='adam', help="type \
+    parser.add_argument('--dev_device', default="cpu")
+    parser.add_argument('--optimizer', type=str, default='adamw', help="type \
                         of optimizer")
     parser.add_argument('--iid', type=int, default=0,
                         help='Default set to IID. Set to 0 for non-IID.')

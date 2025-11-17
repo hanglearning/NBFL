@@ -63,13 +63,14 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=40)
     parser.add_argument('--fast_dev_run', type=bool, default=False)
     parser.add_argument('--num_workers', type=int, default=0) # for pytorch data loader
-    parser.add_argument('--rewind', type=int, default=0, help="reinit ticket model parameters before training")
-    parser.add_argument('--optimizer', type=str, default="Adam", help="SGD|Adam")
+    parser.add_argument('--reset', type=int, default=0, help="reinit ticket model parameters before training")
+    parser.add_argument('--optimizer', type=str, default="AdamW", help="SGD|Adam|AdamW")
 
     parser.add_argument('--n_malicious', type=int, default=0)
 
-    parser.add_argument('--acc_drop_frac', type=float, default=0.05, help='fraction of current max local accuracy that defines maximum acceptable accuracy drop for pruning')
+    parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
     parser.add_argument('--target_sparsity', type=float, default=0.1, help='target sparsity for pruning, stop pruning if below this threshold')
+    parser.add_argument('--dev_device', type=str, default="cpu")
 
     # Run Type
     parser.add_argument('--standalone_LTH', type=int, default=0)
@@ -94,7 +95,7 @@ if __name__ == "__main__":
     random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    args.dev_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # args.dev_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     if not args.n_malicious or not args.attack_type:
         args.n_malicious, args.attack_type = 0, 0
@@ -116,7 +117,7 @@ if __name__ == "__main__":
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
 
-    args.log_dir = f"{args.log_dir}/{run_name}_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha_dirichlet}_{exe_date_time}_ndevices_{args.n_clients}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}_rewind_{int(args.rewind)}"
+    args.log_dir = f"{args.log_dir}/{run_name}_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha_dirichlet}_{exe_date_time}_ndevices_{args.n_clients}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}_reset_{int(args.reset)}"
 
     os.makedirs(args.log_dir)
 
@@ -139,19 +140,42 @@ if __name__ == "__main__":
     if args.PoIS:
         # https://github.com/harshkasyap/DecFL/blob/master/Non%20IID/dirichlet%20distribution/vary%20attacker/fm_noniid_ba_9.py
         from torchvision import datasets, transforms
-        transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
-                ])
-        test_data = datasets.MNIST(root='./data',train=False,transform=transform,download=True)
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
+
+        test_data = datasets.MNIST(root='./data', train=False, transform=transform, download=True)
+        # 8k/2k split, then 1.5k for test set to explain, 500 for SHAP background
         _, test_data_2 = torch.utils.data.random_split(test_data, [8000, 2000])
         test_data_bd, shap_background = torch.utils.data.random_split(test_data_2, [1500, 500])
 
-        shap_tr_loader = torch.utils.data.DataLoader(shap_background, batch_size = 128, shuffle=True) 
-        batch_shap = next(iter(shap_tr_loader))
-        images_shap, _ = batch_shap
-        background = images_shap[:100]
-        test_images = torch.zeros(1,1,28,28)
+        # Small background (e.g., 100) from the background split
+        shap_tr_loader = torch.utils.data.DataLoader(
+            shap_background, batch_size=128, shuffle=True,
+            pin_memory=torch.cuda.is_available()
+        )
+        images_shap, _ = next(iter(shap_tr_loader))
+        background = images_shap[:100]  # (100, 1, 28, 28)
+
+        # Use real test images (batch of 8) instead of zeros for explanations
+        test_loader_for_explain = torch.utils.data.DataLoader(
+            test_data_bd, batch_size=8, shuffle=False,
+            pin_memory=torch.cuda.is_available()
+        )
+        test_images, _ = next(iter(test_loader_for_explain))  # (8, 1, 28, 28)
+
+        # -------- Device harmonization with model --------
+        # If your code defines `model` earlier, use its device; else default sensibly.
+        if 'model' in locals() or 'model' in globals():
+            device = next(model.parameters()).device
+            model.eval()  # SHAP expects eval mode (no dropout/stat updates)
+        else:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        background  = background.to(device)
+        test_images = test_images.to(device)
 
     ''' PoIS code '''
     

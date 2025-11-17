@@ -47,6 +47,7 @@ parser.add_argument('--validation_verbose', type=int, default=0, help='show vali
 parser.add_argument('--seed', type=int, default=40)
 parser.add_argument('--log_dir', type=str, default="./logs")
 parser.add_argument('--peer_percent', type=float, default=1, help='this indicates the percentage of peers to assign. See assign_peers() in device.py. As the communication goes on, a device should be able to know all other devices in the network.')
+parser.add_argument('--dev_device', type=str, default="cuda:0")
 
 ####################### federated learning setting #######################
 parser.add_argument('--arch', type=str, default='cnn', help='cnn|mlp')
@@ -58,7 +59,7 @@ parser.add_argument('--batch_size', type=int, default=10)
 parser.add_argument('--rounds', type=int, default=25)
 parser.add_argument('--epochs', type=int, default=50, help="local max training epochs to get the max accuracy")
 parser.add_argument('--lr', type=float, default=0.01)
-parser.add_argument('--optimizer', type=str, default="Adam", help="SGD|Adam")
+parser.add_argument('--optimizer', type=str, default="adamw", help="adam|adamw|sgd")
 parser.add_argument('--total_samples', type=int, default=200)
 parser.add_argument('--n_malicious', type=int, default=8, help="number of malicious nodes in the network")
 
@@ -73,13 +74,10 @@ parser.add_argument('--all_mal_val', type=int, default=0, help='Set to 1 to make
 parser.add_argument('--attack_type', type=int, default=0, help='0 - no attack, 1 - model poisoning attack, 2 - label flipping attack, 3 - lazy attack, 4 - model poisoning and lazy attack')
 
 ####################### pruning setting #######################
-parser.add_argument('--rewind', type=int, default=0, help="reinit ticket model parameters before training")
+parser.add_argument('--reset', type=int, default=0, help="reinit ticket model parameters before training")
 parser.add_argument('--target_sparsity', type=float, default=0.1, help='target sparsity for pruning, stop pruning if below this threshold')
 parser.add_argument('--max_prune_step', type=float, default=0.05, help='max increment of pruning step')
-# parser.add_argument('--acc_drop_frac', type=float, default=0.05, help='fraction of current max local accuracy that defines maximum acceptable accuracy drop for pruning')
-parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='if the accuracy drop is larger than this threshold, stop prunning')
-parser.add_argument('--prune_acc_trigger', type=float, default=0.8, help='must achieve this accuracy to trigger worker to prune its local model')
-parser.add_argument('--acc_stable_prune_rounds', type=int, default=3, help='number of max_accuracy-stable rounds to trigger pruning')
+parser.add_argument('--acc_drop_threshold', type=float, default=0.05, help='base accuracy drop threshold - if the accuracy drop is larger than this threshold, stop prunning')
 
 ####################### blockchain setting #######################
 parser.add_argument('--n_devices', type=int, default=10)
@@ -122,11 +120,11 @@ def main():
     if args.dataset_mode == 'iid':
         args.alpha = '∞'
     
-    args.dev_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # args.dev_device = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
     print(f"Using device {args.dev_device}")
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"NBFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}_rewind_{int(args.rewind)}"
+    log_root_name = f"NBFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_devices}_nsamples_{args.total_samples}_rounds_{args.rounds}_mal_{args.n_malicious}_attack_{args.attack_type}_reset_{int(args.reset)}"
 
     ######## initiate global model ########
     init_global_model = create_init_model(cls=models[args.dataset]
@@ -263,7 +261,6 @@ def main():
             device.layer_to_model_sig_col = {}
             device.max_model_acc = 0
             device._worker_pruned_ratio = 0
-            device.has_pruned = False
             # validators
             device._validator_tx = None
             device._verified_worker_txs = {}
@@ -294,10 +291,10 @@ def main():
             # resync chain - especially offline devices from last round
             if worker.resync_chain(comm_round, idx_to_device):
                 worker.post_resync(idx_to_device)
-            # perform pruning
-            worker.worker_prune(comm_round, logger)
             # perform training
             worker.model_learning_max(comm_round, logger)
+            # perform pruning
+            worker.worker_prune(comm_round, logger)
             # generate model signature
             worker.generate_model_sig()
             # make tx
@@ -320,7 +317,7 @@ def main():
                     worker.role = 'validator'
                     online_validators.append(worker)
         
-        print(f"\nRound {comm_round}, {len(online_validators)} validators volunteered.")
+        print(f"\nRound {comm_round}, {len(online_validators)} validators selected.")
             
         for validator_iter in range(len(online_validators)):
             validator = online_validators[validator_iter]

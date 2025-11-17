@@ -34,82 +34,136 @@ class LotteryFLLocalUpdate(object):
     def __init__(self, args, trainloader, testloader, global_testloader, device_id):
         self.args = args
         self.trainloader = trainloader
-        self.testloader = testloader  # Local test set from DataLoaders
+        self.testloader = testloader          # Local test set from DataLoaders
         self.global_testloader = global_testloader  # Global test set
         self.device_id = device_id
-        self.device = 'cuda' if args.gpu else 'cpu'
-        self.criterion = nn.NLLLoss().to(self.device)
+        self.device = args.dev_device
+
+        self.criterion = nn.CrossEntropyLoss().to(self.device)
 
     def update_weights(self, model, epochs, device):
-        """
-        Original LotteryFL update_weights logic
-        """
+
         EPS = 1e-6
+
+        model.to(self.device)
         model.train()
         epoch_loss = []
 
-        # Set optimizer for the local updates (same as original LotteryFL)
-        if self.args.optimizer == 'sgd':
-            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
-                                        momentum=0.5)
-        elif self.args.optimizer == 'adam':
-            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
-                                         weight_decay=1e-4)
-        
-        iter = 0
+        optimizer_type = self.args.optimizer.lower()
+
+        # Optimizer consistent with your new train() style
+        if optimizer_type == 'sgd':
+            optimizer = torch.optim.SGD(
+                model.parameters(),
+                lr=self.args.lr,
+                momentum=0.9,
+                nesterov=True,
+                weight_decay=1e-4
+            )
+        elif optimizer_type == 'adam':
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=self.args.lr,
+                weight_decay=1e-4
+            )
+        elif optimizer_type == "adamw":
+            optimizer = torch.optim.AdamW(
+                model.parameters(),
+                lr=self.args.lr,
+                weight_decay=1e-4
+            )
+        else:
+            raise ValueError(f"Unknown optimizer type: {optimizer_type}")
+
+        # AMP setup
+        amp_enabled = torch.cuda.is_available() and str(self.device).startswith("cuda")
+        scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
+        autocast_ctx = torch.cuda.amp.autocast(
+            dtype=torch.float16,
+            enabled=amp_enabled
+        )
+
+        # Evaluate initial training accuracy to track best model (same as original)
         max_model = model
-        max_acc = test_by_data_set(model, self.trainloader, device, verbose=False)['MulticlassAccuracy'][0]
+        max_acc = test_by_data_set(
+            model, self.trainloader, device, verbose=False
+        )['MulticlassAccuracy'][0]
 
-        # Create progress bar for local epochs
-        pbar = tqdm(range(epochs), desc=f"Device {self.device_id + 1}", 
-                   leave=False, disable=(epochs == 0))
+        # Progress bar for local epochs
+        pbar = tqdm(
+            range(epochs),
+            desc=f"Device {self.device_id + 1}",
+            leave=False,
+            disable=(epochs == 0)
+        )
 
+        iter = 0
         while iter < epochs:
             batch_loss = []
-            
+
             for batch_idx, (images, labels) in enumerate(self.trainloader):
-                images, labels = images.to(self.device), labels.to(self.device)
-                
-                model.zero_grad()
-                log_probs = model(images)
-                loss = self.criterion(log_probs, labels)
-                loss.backward()
-                
-                # Freezing Pruned weights by making their gradients Zero (original LotteryFL logic)
+                images = images.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
+
+                optimizer.zero_grad(set_to_none=True)
+
+                with autocast_ctx:
+                    logits = model(images)                  # logits (NO softmax)
+                    loss = self.criterion(logits, labels)
+
+                # Backward with AMP
+                scaler.scale(loss).backward()
+
+                # Unscale before grad clipping and manual grad edits
+                scaler.unscale_(optimizer)
+
+                # Freeze pruned weights: grad = 0 where |weight| < EPS
                 for name, p in model.named_parameters():
-                    if 'weight' in name:
-                        tensor = p.data.cpu().numpy()
-                        grad_tensor = p.grad.data.cpu().numpy()
-                        grad_tensor = np.where(abs(tensor) < EPS, 0, grad_tensor)
-                        p.grad.data = torch.from_numpy(grad_tensor).to(device)
-                
-                optimizer.step()
-                batch_loss.append(loss.item())
-            
-            # Evaluate on training set to find best model (original LotteryFL logic)
-            acc = test_by_data_set(model, self.trainloader, device, verbose=False)['MulticlassAccuracy'][0]
+                    if 'weight' in name and p.grad is not None:
+                        with torch.no_grad():
+                            mask = p.data.abs() < EPS
+                            p.grad.data[mask] = 0.0
+
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+                # Optimizer step with scaler
+                scaler.step(optimizer)
+                scaler.update()
+
+                batch_loss.append(loss.detach().item())
+
+            # Evaluate on training set to find best model (train-to-max-acc)
+            acc = test_by_data_set(
+                model, self.trainloader, device, verbose=False
+            )['MulticlassAccuracy'][0]
+
             if acc > max_acc:
                 max_model = copy.deepcopy(model)
                 max_acc = acc
-            
+
             # Update progress bar
             pbar.set_postfix({
                 'epoch': f'{iter + 1}/{epochs}',
-                'loss': f'{sum(batch_loss)/len(batch_loss):.4f}',
+                'loss': f'{sum(batch_loss) / max(1, len(batch_loss)):.4f}',
                 'acc': f'{acc:.4f}'
             })
             pbar.update(1)
-            
+
             iter += 1
-            epoch_loss.append(sum(batch_loss)/len(batch_loss))
-            if max_acc == 1.0: 
+            epoch_loss.append(sum(batch_loss) / max(1, len(batch_loss)))
+
+            # Same early stopping as before
+            if max_acc == 1.0:
                 break
 
         pbar.close()
-        
+
         if epochs == 0:
-            return model.state_dict(), 0
-        return max_model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+            return model.state_dict(), 0, max_acc
+
+        avg_epoch_loss = sum(epoch_loss) / max(1, len(epoch_loss))
+        return max_model.state_dict(), avg_epoch_loss, max_acc
 
     def inference(self, model):
         """
@@ -161,7 +215,8 @@ if __name__ == '__main__':
     args = args_parser()
     exp_details(args)
 
-    device = 'cuda' if args.gpu else 'cpu'
+    # device = 'cuda' if args.gpu else 'cpu'
+    device = args.dev_device
 
     if not args.n_malicious or not args.attack_type:
         args.n_malicious, args.attack_type = 0, 0
@@ -170,7 +225,7 @@ if __name__ == '__main__':
         args.alpha = '∞'
 
     exe_date_time = datetime.now().strftime("%m%d%Y_%H%M%S")
-    log_root_name = f"LotteryFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_clients}_nsamples_{args.total_samples}_rounds_{args.epochs}_mal_{args.n_malicious}_attack_{args.attack_type}_rewind_{int(args.rewind)}"
+    log_root_name = f"LotteryFL_{args.dataset}_seed_{args.seed}_{args.dataset_mode}_alpha_{args.alpha}_{exe_date_time}_ndevices_{args.n_clients}_nsamples_{args.total_samples}_rounds_{args.epochs}_mal_{args.n_malicious}_attack_{args.attack_type}_reset_{int(args.reset)}"
 
     args.log_dir = f"{args.log_dir}/{log_root_name}"
     os.makedirs(args.log_dir)
@@ -321,7 +376,7 @@ if __name__ == '__main__':
                 #update pruning rate
                 pruning_rate[idx] = pruning_rate[idx] * (1 - args.prune_percent/100)
                 #reset to initial value to make lottery tickets
-                if args.rewind:
+                if args.reset:
                     mask_model(train_model, masks[idx], init_weights)
 
             # Handle malicious users (same as original)
@@ -331,16 +386,16 @@ if __name__ == '__main__':
                     user_pbar.set_postfix_str("Poisoning model")
                     poison_model(train_model, noise_variances[noise_index])
                     noise_index += 1
-                    w, loss = local_model.update_weights(
+                    w, loss, max_acc = local_model.update_weights(
                         model=train_model, epochs=0, device=device) # no train
                 else:
                     # lazy attack
                     user_pbar.set_postfix_str("Lazy attack")
-                    w, loss = local_model.update_weights(
+                    w, loss, max_acc = local_model.update_weights(
                     model=train_model, epochs=int(args.local_ep * 0.1), device=device)
             else:
                 user_pbar.set_postfix_str("Training")
-                w, loss = local_model.update_weights(
+                w, loss, max_acc = local_model.update_weights(
                     model=train_model, epochs=args.local_ep, device=device)
                     
             #model used for test
@@ -350,10 +405,6 @@ if __name__ == '__main__':
             acc, _ = local_model.inference(model=temp_model)  # This uses local test set with 2-batch limit
             
             # Original LotteryFL tracking
-            if(args.prune_percent != 0):
-                users_in_epoch.append(idx)
-                if(acc > best_acc[idx]):
-                    best_acc[idx] = acc
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
             local_masks.append(copy.deepcopy(masks[idx]))
@@ -363,8 +414,8 @@ if __name__ == '__main__':
             # Enhanced logging
             logger['local_train_acc'][epoch + 1][idx] = local_model.evaluate_on_train(temp_model)
             logger['local_test_acc'][epoch + 1][idx] = local_model.evaluate_on_local_test(temp_model)
-            logger['local_max_acc'][epoch + 1][idx] = test_by_data_set(temp_model, local_model.trainloader, device, verbose=False)['MulticlassAccuracy'][0]
-
+            logger['local_max_acc'][epoch + 1][idx] = max_acc
+            
         user_pbar.close()
         print("local accuracy: {}\n".format(sum(local_acc)/len(local_acc)))
         
