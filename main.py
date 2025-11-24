@@ -57,7 +57,7 @@ parser.add_argument('--alpha', type=float, default=1.0, help='unbalance between 
 parser.add_argument('--dataloader_workers', type=int, default=0, help='num of pytorch dataloader workers')
 parser.add_argument('--batch_size', type=int, default=10)
 parser.add_argument('--rounds', type=int, default=25)
-parser.add_argument('--epochs', type=int, default=50, help="local max training epochs to get the max accuracy")
+parser.add_argument('--epochs', type=int, default=100, help="local max training epochs to get the max accuracy")
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--optimizer', type=str, default="adamw", help="adam|adamw|sgd")
 parser.add_argument('--total_samples', type=int, default=200)

@@ -7,354 +7,271 @@ from sklearn.utils import shuffle
 from matplotlib import pyplot as plt
 
 
-def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1, need_test_loaders=False):
-    if mode == "non-iid":
-        if dataset_name == "mnist":
-            return get_data_noniid_mnist(n_devices,
-                                         total_samples,
-                                         log_dirpath,
-                                         seed,
-                                         batch_size,
-                                         alpha,
-                                         dataloader_workers,
-                                         mode,
-                                         need_test_loaders)
-        elif dataset_name == "cifar10":
-            return get_data_noniid_cifar10(n_devices,
-                                           total_samples,
-                                           log_dirpath,
-                                           seed,
-                                           batch_size,
-                                           alpha,
-                                           dataloader_workers,
-                                           need_test_loaders)
-    elif mode == 'iid':
-        if dataset_name == 'cifar10':
-            data_dir = './data'
-            apply_transform = transforms.Compose(
-                [transforms.ToTensor(),
-                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
-            train_dataset = tv.datasets.CIFAR10(data_dir, train=True, download=True,
-                                                transform=apply_transform)
-
-            test_dataset = tv.datasets.CIFAR10(data_dir, train=False, download=True,
-                                               transform=apply_transform)
-            return iid_split(n_devices, train_dataset, batch_size, test_dataset, dataloader_workers, log_dirpath, total_samples, need_test_loaders)
-        elif dataset_name == 'mnist':
-            data_dir = './data'
-            apply_transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))])
-            train_dataset = tv.datasets.MNIST(data_dir, train=True, download=True,
-                                              transform=apply_transform)
-
-            test_dataset = tv.datasets.MNIST(data_dir, train=False, download=True,
-                                             transform=apply_transform)
-            return iid_split(n_devices, train_dataset, batch_size, test_dataset, dataloader_workers, log_dirpath, total_samples, need_test_loaders)
-
-
-def iid_split(n_clients, train_data, batch_size, test_data, dataloader_workers, log_dirpath, total_samples, need_test_loaders):
-    labels = np.array(train_data.targets)
-    samples_per_label = total_samples // 10  # assume 10 labels
+def select_fixed_dataset(train_data, total_samples_per_device, n_devices, seed):
+    """
+    Select a fixed subset of data points that will be used for both IID and Non-IID.
+    This ensures the same data points are used, just distributed differently.
     
-    # ===== TRAINING DATA ASSIGNMENT (UNCHANGED) =====
-    idx_by_label = {l: np.where(labels == l)[0] for l in range(10)}
-    for l in idx_by_label:
-        np.random.shuffle(idx_by_label[l])
+    Args:
+        train_data: The full training dataset
+        total_samples_per_device: Number of samples each device should get
+        n_devices: Number of devices
+        seed: Random seed for reproducibility
     
-    sample_train_idx = [[] for _ in range(n_clients)]
-    for i in range(n_clients):
-        for l in range(10):
-            take = idx_by_label[l][:samples_per_label]
-            sample_train_idx[i].extend(take)
-            idx_by_label[l] = idx_by_label[l][samples_per_label:]
-
-    # ===== TEST DATA ASSIGNMENT (MODIFIED TO MATCH LOTTERYFL) =====
-    # Sort test data by labels like LotteryFL does
-    test_labels = np.array(test_data.targets)
-    test_idxs = np.arange(len(test_data))
-    
-    # Sort test indices by labels
-    test_idxs_labels = np.vstack((test_idxs, test_labels))
-    test_idxs_labels = test_idxs_labels[:, test_idxs_labels[1, :].argsort()]
-    sorted_test_idxs = test_idxs_labels[0, :]
-    sorted_test_labels = test_idxs_labels[1, :]
-    
-    # Create test index pools by class (like LotteryFL)
-    test_idxs_splits = [[] for _ in range(10)]
-    for i in range(len(sorted_test_labels)):
-        test_idxs_splits[sorted_test_labels[i]].append(sorted_test_idxs[i])
-    
-    sample_test_idx = [[] for _ in range(n_clients)]
-    
-    for i in range(n_clients):
-        # Get training labels for this client
-        train_indices = sample_train_idx[i]
-        train_labels_arr = np.array(train_data.targets)[train_indices]
-        user_labels_set = set(train_labels_arr)
-        
-        # Assign ALL test samples from the same classes as training (LotteryFL style)
-        for label in user_labels_set:
-            sample_test_idx[i].extend(test_idxs_splits[label])
-
-    # ===== CREATE DATA LOADERS =====
-    user_train_loaders = []
-    user_test_loaders = []
-
-    for idx in sample_train_idx:
-        user_train_loaders.append(torch.utils.data.DataLoader(train_data,
-                                                              sampler=torch.utils.data.SubsetRandomSampler(idx),
-                                                              batch_size=batch_size, num_workers=dataloader_workers))
-    
-    for idx in sample_test_idx:
-        if len(idx) > 0:
-            user_test_loaders.append(torch.utils.data.DataLoader(test_data,
-                                                                 sampler=torch.utils.data.SubsetRandomSampler(idx),
-                                                                 batch_size=batch_size, num_workers=dataloader_workers))
-        else:
-            user_test_loaders.append(torch.utils.data.DataLoader(test_data,
-                                                                 sampler=torch.utils.data.SubsetRandomSampler([]),
-                                                                 batch_size=batch_size, num_workers=dataloader_workers))
-    
-    # ===== LOGGING =====
-    user_label_to_qty = {}
-    for i, (train_loader, test_idx) in enumerate(zip(user_train_loaders, sample_test_idx)):
-        labels = []
-        for batch in train_loader:
-            _, targets = batch
-            labels.extend(targets.numpy().tolist())
-        unique_labels = sorted(list(set(labels)))
-        class_counts = np.bincount(np.array(labels), minlength=10)
-        
-        # Log test distribution for verification
-        if len(test_idx) > 0:
-            test_labels_arr = np.array(test_data.targets)[test_idx]
-            test_class_counts = np.bincount(test_labels_arr, minlength=10)
-        else:
-            test_class_counts = np.zeros(10)
-        
-        msg = f"Device {i + 1} train label distribution: {dict(enumerate(class_counts))}"
-        if need_test_loaders:
-            msg += f", test label distribution: {dict(enumerate(test_class_counts))}"
-        with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
-            f.write(f"{msg}\n")
-        print(msg)
-        user_label_to_qty[i] = dict(enumerate(class_counts))
-    
-    global_test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=dataloader_workers)
-    return user_train_loaders, user_test_loaders, user_label_to_qty, global_test_loader
-
-
-def get_data_noniid_cifar10(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, need_test_loaders=False):
-    data_dir = './data'
-    apply_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-    ])
-    train_data = tv.datasets.CIFAR10(data_dir, train=True, download=True, transform=apply_transform)
-    test_data = tv.datasets.CIFAR10(data_dir, train=False, download=True, transform=apply_transform)
-
+    Returns:
+        selected_indices: Dictionary mapping class labels to selected indices
+        total_per_class: Dictionary showing how many samples per class were selected
+    """
     np.random.seed(seed)
-    K = 10  # total labels
-
-    # ===== TRAINING DATA ASSIGNMENT (UNCHANGED) =====
-    idx_by_class = {k: np.where(np.array(train_data.targets) == k)[0].tolist() for k in range(K)}
+    
+    total_samples_needed = total_samples_per_device * n_devices
+    K = 10  # Number of classes
+    
+    # Get all indices organized by class
+    all_labels = np.array(train_data.targets)
+    idx_by_class = {k: np.where(all_labels == k)[0].tolist() for k in range(K)}
+    
+    # Shuffle indices within each class
     for k in idx_by_class:
         np.random.shuffle(idx_by_class[k])
-
-    idx_batch = [[] for _ in range(n_devices)]
-    user_label_to_qty = {}
-
-    for device_id in range(n_devices):
-        proportions = np.random.dirichlet(np.repeat(alpha, K))
-        proportions = proportions / proportions.sum()
-        assigned_counts = {k: int(p * total_samples) for k, p in enumerate(proportions)}
-
-        selected_labels = [label for label in assigned_counts if assigned_counts[label] > 0]
-
-        for label in selected_labels:
-            take = min(assigned_counts[label], len(idx_by_class[label]))
-            selected = idx_by_class[label][:take]
-            idx_by_class[label] = idx_by_class[label][take:]
-            idx_batch[device_id].extend(selected)
-
-        while len(idx_batch[device_id]) < total_samples:
-            for label in selected_labels:
-                if len(idx_by_class[label]) == 0:
-                    continue
-                idx_batch[device_id].append(idx_by_class[label].pop())
-                if len(idx_batch[device_id]) == total_samples:
+    
+    # For IID, we want roughly equal representation of each class
+    # So we'll select equal amounts from each class
+    samples_per_class = total_samples_needed // K
+    remaining_samples = total_samples_needed % K
+    
+    selected_indices = {}
+    total_per_class = {}
+    
+    for k in range(K):
+        # Take base amount plus one extra for some classes to handle remainder
+        take_count = samples_per_class + (1 if k < remaining_samples else 0)
+        take_count = min(take_count, len(idx_by_class[k]))  # Don't take more than available
+        
+        selected_indices[k] = idx_by_class[k][:take_count]
+        total_per_class[k] = take_count
+    
+    # If we couldn't get enough samples (dataset too small), fill from available classes
+    total_selected = sum(total_per_class.values())
+    if total_selected < total_samples_needed:
+        for k in range(K):
+            remaining_in_class = len(idx_by_class[k]) - total_per_class[k]
+            if remaining_in_class > 0:
+                extra_needed = min(remaining_in_class, total_samples_needed - total_selected)
+                selected_indices[k].extend(idx_by_class[k][total_per_class[k]:total_per_class[k] + extra_needed])
+                total_per_class[k] += extra_needed
+                total_selected += extra_needed
+                if total_selected >= total_samples_needed:
                     break
+    
+    return selected_indices, total_per_class
 
-    # ===== TEST DATA ASSIGNMENT (MODIFIED TO MATCH LOTTERYFL) =====
-    # Sort test data by labels like LotteryFL does
-    test_labels = np.array(test_data.targets)
-    test_idxs = np.arange(len(test_data))
-    
-    # Sort test indices by labels
-    test_idxs_labels = np.vstack((test_idxs, test_labels))
-    test_idxs_labels = test_idxs_labels[:, test_idxs_labels[1, :].argsort()]
-    sorted_test_idxs = test_idxs_labels[0, :]
-    sorted_test_labels = test_idxs_labels[1, :]
-    
-    # Create test index pools by class (like LotteryFL)
-    test_idxs_splits = [[] for _ in range(K)]
-    for i in range(len(sorted_test_labels)):
-        test_idxs_splits[sorted_test_labels[i]].append(sorted_test_idxs[i])
-    
-    # ===== CREATE DATA LOADERS =====
-    train_loaders, test_loaders = [], []
-    for i, idx in enumerate(idx_batch):
-        # Training loader (unchanged)
-        sampler_train = torch.utils.data.SubsetRandomSampler(idx)
-        loader_train = torch.utils.data.DataLoader(train_data, sampler=sampler_train, batch_size=batch_size, num_workers=dataloader_workers)
-        train_loaders.append(loader_train)
 
-        # Get training labels for this device
-        labels_arr = np.array(train_data.targets)[idx]
-        class_counts = np.bincount(labels_arr, minlength=10)
-        user_labels_set = set(labels_arr)
+def distribute_iid(selected_indices, n_devices, total_samples_per_device):
+    """
+    Distribute the selected data points evenly across devices (IID).
+    
+    Args:
+        selected_indices: Dictionary mapping class labels to selected indices
+        n_devices: Number of devices
+        total_samples_per_device: Number of samples each device should get
+    
+    Returns:
+        device_indices: List of indices for each device
+    """
+    K = 10
+    device_indices = [[] for _ in range(n_devices)]
+    
+    # For IID, distribute each class's samples evenly across all devices
+    for k in range(K):
+        class_indices = selected_indices[k].copy()
+        samples_per_device_from_class = len(class_indices) // n_devices
+        remainder = len(class_indices) % n_devices
         
-        # Test data assignment: ALL test samples from training classes (LotteryFL style)
-        idx_test = []
-        for label in user_labels_set:
-            idx_test.extend(test_idxs_splits[label])
-        
-        # Log distributions
-        if len(idx_test) > 0:
-            test_labels_arr = np.array(test_data.targets)[idx_test]
-            test_class_counts = np.bincount(test_labels_arr, minlength=10)
-        else:
-            test_class_counts = np.zeros(10)
+        idx_position = 0
+        for device_id in range(n_devices):
+            # Give base amount plus one extra to handle remainder
+            take = samples_per_device_from_class + (1 if device_id < remainder else 0)
+            device_indices[device_id].extend(class_indices[idx_position:idx_position + take])
+            idx_position += take
+    
+    # Shuffle indices within each device to mix classes
+    for device_id in range(n_devices):
+        np.random.shuffle(device_indices[device_id])
+    
+    return device_indices
+
+
+def distribute_noniid(selected_indices, n_devices, total_samples_per_device, alpha, seed):
+    """
+    Distribute the selected data points using Dirichlet distribution (Non-IID).
+    
+    Args:
+        selected_indices: Dictionary mapping class labels to selected indices
+        n_devices: Number of devices
+        total_samples_per_device: Number of samples each device should get
+        alpha: Dirichlet distribution parameter
+        seed: Random seed for Dirichlet sampling
+    
+    Returns:
+        device_indices: List of indices for each device
+    """
+    np.random.seed(seed)
+    K = 10
+    device_indices = [[] for _ in range(n_devices)]
+    
+    # Create pools of available indices for each class
+    available_by_class = {k: selected_indices[k].copy() for k in range(K)}
+    
+    for device_id in range(n_devices):
+        if alpha == 0:
+            # Special case: each device gets only one class
+            # Try to assign different classes to different devices if possible
+            assigned_classes = [len(device_indices[i]) > 0 for i in range(device_id)]
+            available_classes = [k for k in range(K) if len(available_by_class[k]) > 0]
             
-        msg = f"Device {i + 1} train label distribution: {dict(enumerate(class_counts))}"
-        if need_test_loaders:
-            msg += f", test label distribution: {dict(enumerate(test_class_counts))}"
-        with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
-            f.write(f"{msg}\n")
-        print(msg)
-
-        user_label_to_qty[i] = dict(enumerate(class_counts))
-
-        # Test loader
-        sampler_test = torch.utils.data.SubsetRandomSampler(idx_test)
-        loader_test = torch.utils.data.DataLoader(test_data, sampler=sampler_test, batch_size=batch_size, num_workers=dataloader_workers)
-        test_loaders.append(loader_test)
-
-    global_test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=dataloader_workers)
-
-    return train_loaders, test_loaders, user_label_to_qty, global_test_loader
-
-
-def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, dataset_mode="non-iid", need_test_loaders=False):
-    import os
-    data_dir = './data'
-    apply_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
-    train_data = tv.datasets.MNIST(data_dir, train=True, download=True, transform=apply_transform)
-    test_data = tv.datasets.MNIST(data_dir, train=False, download=True, transform=apply_transform)
-
-    np.random.seed(seed)
-    K = 10  # total labels
-    N = len(train_data)
-
-    # ===== TRAINING DATA ASSIGNMENT (UNCHANGED) =====
-    idx_by_class = {k: np.where(np.array(train_data.targets) == k)[0].tolist() for k in range(K)}
-    for k in idx_by_class:
-        np.random.shuffle(idx_by_class[k])
-    
-    # Pre-compute IID partitions if needed
-    if dataset_mode == "iid":
-        all_indices = np.arange(len(train_data))
-        np.random.shuffle(all_indices)
-        iid_chunks = np.array_split(all_indices, n_devices)
-
-    idx_batch = [[] for _ in range(n_devices)]
-    user_labels = [[] for _ in range(n_devices)]
-
-    # Training data assignment (unchanged)
-    for device_id in range(n_devices):
-        if dataset_mode == "iid":
-            selected = iid_chunks[device_id]
-            idx_batch[device_id].extend(selected)
-            user_labels[device_id] = list(np.unique(np.array(train_data.targets)[selected]))
-            continue
-        elif alpha == 0:
-            label = np.random.choice(K)
-            user_labels[device_id] = [label]
-            take = min(total_samples, len(idx_by_class[label]))
-            selected = idx_by_class[label][:take]
-            idx_by_class[label] = idx_by_class[label][take:]
-            idx_batch[device_id].extend(selected)
- 
-            while len(idx_batch[device_id]) < total_samples:
-                if len(idx_by_class[label]) == 0:
-                    break
-                idx_batch[device_id].append(idx_by_class[label].pop())
-            continue
+            if available_classes:
+                label = np.random.choice(available_classes)
+                take = min(total_samples_per_device, len(available_by_class[label]))
+                device_indices[device_id].extend(available_by_class[label][:take])
+                available_by_class[label] = available_by_class[label][take:]
         else:
+            # Sample from Dirichlet distribution
             proportions = np.random.dirichlet(np.repeat(alpha, K))
             proportions = proportions / proportions.sum()
-            assigned_counts = {k: int(p * total_samples) for k, p in enumerate(proportions)}
- 
-            selected_labels = [label for label in assigned_counts if assigned_counts[label] > 0]
-            user_labels[device_id] = selected_labels
- 
-            for label in selected_labels:
-                take = min(assigned_counts[label], len(idx_by_class[label]))
-                selected = idx_by_class[label][:take]
-                idx_by_class[label] = idx_by_class[label][take:]
-                idx_batch[device_id].extend(selected)
- 
-            while len(idx_batch[device_id]) < total_samples:
-                for label in selected_labels:
-                    if len(idx_by_class[label]) == 0:
-                        continue
-                    idx_batch[device_id].append(idx_by_class[label].pop())
-                    if len(idx_batch[device_id]) == total_samples:
-                        break
-
-    # ===== TEST DATA ASSIGNMENT (MODIFIED TO MATCH LOTTERYFL) =====
-    # Sort test data by labels like LotteryFL does
-    test_labels = np.array(test_data.targets)
-    test_idxs = np.arange(len(test_data))
+            
+            # Calculate how many samples from each class for this device
+            assigned_counts = {k: int(p * total_samples_per_device) for k, p in enumerate(proportions)}
+            
+            # Adjust to ensure we assign exactly total_samples_per_device
+            total_assigned = sum(assigned_counts.values())
+            if total_assigned < total_samples_per_device:
+                # Add remaining samples to classes with highest proportions
+                sorted_classes = sorted(range(K), key=lambda k: proportions[k], reverse=True)
+                for k in sorted_classes:
+                    if len(available_by_class[k]) > assigned_counts[k]:
+                        diff = min(total_samples_per_device - total_assigned, 
+                                 len(available_by_class[k]) - assigned_counts[k])
+                        assigned_counts[k] += diff
+                        total_assigned += diff
+                        if total_assigned >= total_samples_per_device:
+                            break
+            
+            # Assign samples from each class based on calculated counts
+            for k in range(K):
+                if assigned_counts[k] > 0 and len(available_by_class[k]) > 0:
+                    take = min(assigned_counts[k], len(available_by_class[k]))
+                    device_indices[device_id].extend(available_by_class[k][:take])
+                    available_by_class[k] = available_by_class[k][take:]
+            
+            # If we couldn't assign enough samples, take from any available class
+            while len(device_indices[device_id]) < total_samples_per_device:
+                available_classes = [k for k in range(K) if len(available_by_class[k]) > 0]
+                if not available_classes:
+                    break
+                k = np.random.choice(available_classes)
+                device_indices[device_id].append(available_by_class[k].pop(0))
     
-    # Sort test indices by labels
+    return device_indices
+
+
+def DataLoaders(n_devices, dataset_name, total_samples, log_dirpath, seed, mode="non-iid", batch_size=32, alpha=1.0, dataloader_workers=1, need_test_loaders=False):
+    """
+    Modified DataLoaders function that uses the same data points for both IID and Non-IID distributions.
+    """
+    
+    # Load the dataset
+    if dataset_name == "mnist":
+        data_dir = './data'
+        apply_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
+        train_dataset = tv.datasets.MNIST(data_dir, train=True, download=True, transform=apply_transform)
+        test_dataset = tv.datasets.MNIST(data_dir, train=False, download=True, transform=apply_transform)
+    elif dataset_name == "cifar10":
+        data_dir = './data'
+        apply_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+        ])
+        train_dataset = tv.datasets.CIFAR10(data_dir, train=True, download=True, transform=apply_transform)
+        test_dataset = tv.datasets.CIFAR10(data_dir, train=False, download=True, transform=apply_transform)
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
+    
+    # Step 1: Select a fixed subset of data points based on seed
+    # This ensures the same data points are used for both IID and Non-IID
+    selected_indices, total_per_class = select_fixed_dataset(train_dataset, total_samples, n_devices, seed)
+    
+    # Log the selected data distribution
+    with open(f"{log_dirpath}/selected_data_distribution.txt", "w") as f:
+        f.write(f"Total samples selected per class (same for both IID and Non-IID):\n")
+        for k in range(10):
+            f.write(f"Class {k}: {total_per_class.get(k, 0)} samples\n")
+        f.write(f"Total: {sum(total_per_class.values())} samples\n")
+    
+    # Step 2: Distribute the selected data points based on mode
+    if mode == "iid":
+        device_indices = distribute_iid(selected_indices, n_devices, total_samples)
+    elif mode == "non-iid":
+        device_indices = distribute_noniid(selected_indices, n_devices, total_samples, alpha, seed)
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+    
+    # Step 3: Create data loaders
+    user_train_loaders = []
+    user_test_loaders = []
+    user_label_to_qty = {}
+    
+    # Prepare test data splits (same as original implementation)
+    K = 10
+    test_labels = np.array(test_dataset.targets)
+    test_idxs = np.arange(len(test_dataset))
     test_idxs_labels = np.vstack((test_idxs, test_labels))
     test_idxs_labels = test_idxs_labels[:, test_idxs_labels[1, :].argsort()]
     sorted_test_idxs = test_idxs_labels[0, :]
     sorted_test_labels = test_idxs_labels[1, :]
-    
-    # Create test index pools by class (like LotteryFL)
     test_idxs_splits = [[] for _ in range(K)]
     for i in range(len(sorted_test_labels)):
         test_idxs_splits[sorted_test_labels[i]].append(sorted_test_idxs[i])
     
-    # ===== CREATE DATA LOADERS =====
-    user_label_to_qty = {}
-    train_loaders, test_loaders = [], []
-    
-    for i, train_idx in enumerate(idx_batch):
-        # Training loader (unchanged)
+    # Create loaders for each device
+    for i, train_idx in enumerate(device_indices):
+        # Training loader
         sampler_train = torch.utils.data.SubsetRandomSampler(train_idx)
-        loader_train = torch.utils.data.DataLoader(train_data, sampler=sampler_train, batch_size=batch_size, num_workers=dataloader_workers)
-        train_loaders.append(loader_train)
-
-        # Get training labels for this device
-        labels_arr = np.array(train_data.targets)[train_idx]
-        class_counts = np.bincount(labels_arr, minlength=10)
-        user_labels_set = set(labels_arr)
+        loader_train = torch.utils.data.DataLoader(train_dataset, sampler=sampler_train, 
+                                                   batch_size=batch_size, num_workers=dataloader_workers)
+        user_train_loaders.append(loader_train)
         
-        # Test data assignment: ALL test samples from training classes (LotteryFL style)
+        # Get training labels for this device
+        if len(train_idx) > 0:
+            labels_arr = np.array(train_dataset.targets)[train_idx]
+            class_counts = np.bincount(labels_arr, minlength=10)
+            user_labels_set = set(labels_arr)
+        else:
+            class_counts = np.zeros(10, dtype=int)
+            user_labels_set = set()
+        
+        # Test data assignment: ALL test samples from training classes
         test_idx = []
         for label in user_labels_set:
             test_idx.extend(test_idxs_splits[label])
         
+        # Test loader
+        if len(test_idx) > 0:
+            sampler_test = torch.utils.data.SubsetRandomSampler(test_idx)
+            loader_test = torch.utils.data.DataLoader(test_dataset, sampler=sampler_test, 
+                                                      batch_size=batch_size, num_workers=dataloader_workers)
+        else:
+            loader_test = torch.utils.data.DataLoader(test_dataset, 
+                                                      sampler=torch.utils.data.SubsetRandomSampler([]), 
+                                                      batch_size=batch_size, num_workers=dataloader_workers)
+        user_test_loaders.append(loader_test)
+        
         # Log distributions
         if len(test_idx) > 0:
-            test_labels_arr = np.array(test_data.targets)[test_idx]
+            test_labels_arr = np.array(test_dataset.targets)[test_idx]
             test_class_counts = np.bincount(test_labels_arr, minlength=10)
         else:
             test_class_counts = np.zeros(10)
@@ -362,21 +279,41 @@ def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_siz
         msg = f"Device {i + 1} train label distribution: {dict(enumerate(class_counts))}"
         if need_test_loaders:
             msg += f", test label distribution: {dict(enumerate(test_class_counts))}"
+        
         with open(f"{log_dirpath}/dataset_assigned.txt", "a") as f:
             f.write(f"{msg}\n")
         print(msg)
-
-        # Test loader
-        if len(test_idx) > 0:
-            sampler_test = torch.utils.data.SubsetRandomSampler(test_idx)
-            loader_test = torch.utils.data.DataLoader(test_data, sampler=sampler_test, batch_size=batch_size, num_workers=dataloader_workers)
-        else:
-            loader_test = torch.utils.data.DataLoader(test_data, sampler=torch.utils.data.SubsetRandomSampler([]), batch_size=batch_size, num_workers=dataloader_workers)
-        test_loaders.append(loader_test)
-
+        
         user_label_to_qty[i] = dict(enumerate(class_counts))
     
     # Global test loader
-    global_test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=dataloader_workers)
+    global_test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, 
+                                                     num_workers=dataloader_workers)
+    
+    return user_train_loaders, user_test_loaders, user_label_to_qty, global_test_loader
 
-    return train_loaders, test_loaders, user_label_to_qty, global_test_loader
+
+# Legacy functions for backward compatibility (using new implementation internally)
+def iid_split(n_clients, train_data, batch_size, test_data, dataloader_workers, log_dirpath, total_samples, need_test_loaders):
+    """Legacy wrapper - uses new unified implementation"""
+    # Create a default seed if not provided
+    seed = 42
+    dataset_name = "cifar10" if hasattr(train_data, 'classes') and len(train_data.classes) == 10 else "mnist"
+    return DataLoaders(n_clients, dataset_name, total_samples, log_dirpath, seed, 
+                      mode="iid", batch_size=batch_size, dataloader_workers=dataloader_workers, 
+                      need_test_loaders=need_test_loaders)
+
+
+def get_data_noniid_cifar10(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, need_test_loaders=False):
+    """Legacy wrapper - uses new unified implementation"""
+    return DataLoaders(n_devices, "cifar10", total_samples, log_dirpath, seed,
+                      mode="non-iid", batch_size=batch_size, alpha=alpha,
+                      dataloader_workers=dataloader_workers, need_test_loaders=need_test_loaders)
+
+
+def get_data_noniid_mnist(n_devices, total_samples, log_dirpath, seed, batch_size=32, alpha=1.0, dataloader_workers=1, dataset_mode="non-iid", need_test_loaders=False):
+    """Legacy wrapper - uses new unified implementation"""
+    mode = dataset_mode if dataset_mode in ["iid", "non-iid"] else "non-iid"
+    return DataLoaders(n_devices, "mnist", total_samples, log_dirpath, seed,
+                      mode=mode, batch_size=batch_size, alpha=alpha,
+                      dataloader_workers=dataloader_workers, need_test_loaders=need_test_loaders)
